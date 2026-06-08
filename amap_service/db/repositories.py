@@ -114,10 +114,11 @@ def upsert_traffic_status(engine: Engine, rows: Iterable[dict], batch_size: int 
                             "speed": row.get("speed"),
                             "state": row.get("state"),
                             "travel_time": row.get("travel_time"),
+                            "traffic_time": row.get("traffic_time"),
                             "updated_at": func.current_timestamp(),
                         },
                         index_col=traffic_status.c.link_id,
-                        update_cols=["speed", "state", "travel_time", "updated_at"],
+                        update_cols=["speed", "state", "travel_time", "traffic_time", "updated_at"],
                     )
                     conn.execute(stmt)
                 unique_ids = set(ids)

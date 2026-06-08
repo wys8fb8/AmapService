@@ -29,6 +29,8 @@ road_link_coord = Table(
     Column("latitude", Float, nullable=False),
     UniqueConstraint("link_id", "seq", name="idx_road_link_coord_uniq"),
     Index("idx_road_link_coord_lid", "link_id"),
+    # spatial bbox lookups: SDK candidate-link matching + connectivity-repair gap routing
+    Index("idx_road_link_coord_lnglat", "longitude", "latitude"),
 )
 
 traffic_status = Table(
@@ -38,6 +40,7 @@ traffic_status = Table(
     Column("speed", Integer),
     Column("state", Integer),
     Column("travel_time", Integer),
+    Column("traffic_time", Text),   # 路况时间：响应顶层 utcSeconds(Unix秒) 转 "yyyy-MM-dd HH:mm:ss"(东八区)
     Column("updated_at", TIMESTAMP, server_default=func.current_timestamp()),
     Index("idx_traffic_status_state", "state"),
     Index("idx_traffic_status_updated", "updated_at"),

@@ -3,7 +3,8 @@ from amap_service.parsing.traffic import parse_traffic_item, parse_traffic
 
 def test_top_level_item():
     out = parse_traffic_item({"linkId": 5130516143645130888, "speed": 89, "state": 1, "travelTime": 59})
-    assert out == {"link_id": 5130516143645130888, "speed": 89, "state": 1, "travel_time": 59}
+    assert out == {"link_id": 5130516143645130888, "speed": 89, "state": 1,
+                   "travel_time": 59, "traffic_time": None}
 
 
 def test_section_weighted_speed_and_sum_tt():
@@ -11,7 +12,8 @@ def test_section_weighted_speed_and_sum_tt():
         {"offset": 3765, "reliability": 89, "speed": 88, "state": 1, "travelTime": 688},
         {"offset": 2165, "reliability": 89, "speed": 92, "state": 1, "travelTime": 307},
     ]}
-    assert parse_traffic_item(item) == {"link_id": 5130516143645131894, "speed": 89, "state": 1, "travel_time": 995}
+    assert parse_traffic_item(item) == {"link_id": 5130516143645131894, "speed": 89, "state": 1,
+                                        "travel_time": 995, "traffic_time": None}
 
 
 def test_section_state_most_congested_ignores_unknown():
@@ -53,10 +55,28 @@ def test_top_level_decimal_fields_coerced_to_int():
     from decimal import Decimal
     out = parse_traffic_item({"linkId": 5130516143645130888,
                               "speed": Decimal("89"), "state": Decimal("1"), "travelTime": Decimal("59")})
-    assert out == {"link_id": 5130516143645130888, "speed": 89, "state": 1, "travel_time": 59}
+    assert out == {"link_id": 5130516143645130888, "speed": 89, "state": 1,
+                   "travel_time": 59, "traffic_time": None}
     assert all(isinstance(out[k], int) for k in ("speed", "state", "travel_time"))
 
 
 def test_none_fields_stay_none():
     out = parse_traffic_item({"linkId": 1})
-    assert out == {"link_id": 1, "speed": None, "state": None, "travel_time": None}
+    assert out == {"link_id": 1, "speed": None, "state": None, "travel_time": None, "traffic_time": None}
+
+
+def test_utc_seconds_converted_to_traffic_time():
+    from amap_service.parsing.traffic import format_traffic_time
+    # 1779087064 → 2026-05-18 14:51:04 in UTC+8 (matches the capture time in the API log)
+    assert format_traffic_time(1779087064) == "2026-05-18 14:51:04"
+    assert format_traffic_time(None) is None
+    assert format_traffic_time("not-a-number") is None
+
+
+def test_parse_traffic_propagates_traffic_time_to_every_row():
+    payload = {"utcSeconds": 1779087064, "linkStates": [
+        {"linkId": 1, "speed": 80, "state": 1, "travelTime": 10},
+        {"linkId": 2, "listSectionStatus": [{"speed": 50, "state": 2, "travelTime": 20}]},
+    ]}
+    out = list(parse_traffic(payload))
+    assert {o["traffic_time"] for o in out} == {"2026-05-18 14:51:04"}

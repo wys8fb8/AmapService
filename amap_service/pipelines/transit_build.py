@@ -30,6 +30,10 @@ def run_transit_build(engine: Engine, transit_client: TransitClient, config) -> 
         jut_deg=config.sdk.jut_deg,
         jut_neighbor_deg=config.sdk.jut_neighbor_deg,
         jut_offtrack_m=config.sdk.jut_offtrack_m,
+        against_window_frac=config.sdk.against_window_frac,
+        against_window_m=config.sdk.against_window_m,
+        connect_gap_m=config.sdk.connect_gap_m,
+        max_fill_links=config.sdk.max_fill_links,
     )
     stats = {"token_ok": False, "lines": 0, "directions": 0, "segments": 0, "skipped_lines": 0}
 

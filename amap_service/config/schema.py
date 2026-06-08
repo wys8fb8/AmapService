@@ -133,6 +133,10 @@ class SdkConfig(BaseModel):
     jut_deg: float = 60.0             # 某段相对前后两段都偏转超此值（且前后同向）即判为垂直 jut 删除
     jut_neighbor_deg: float = 45.0    # 前后两段方向差小于此值才算"路线直行"（保护真转弯）
     jut_offtrack_m: float = 15.0      # jut 还需偏离原轨迹超此值才删（保护在轨迹上的真实绕行段）
+    against_window_frac: float = 0.2  # 反向判定只比对轨迹的「局部一段」：总长的此比例
+    against_window_m: float = 80.0    # ...且至少此米数（去/回程重叠时避免与对向腿误比）
+    connect_gap_m: float = 8.0        # 相邻路段端点距超此值即视为有缺口，触发图上补链
+    max_fill_links: int = 8           # 单个缺口最多补入的连接路段数（防绕远路）
 
 
 class LoggingConfig(BaseModel):

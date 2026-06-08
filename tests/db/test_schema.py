@@ -20,7 +20,7 @@ def test_traffic_link_id_unique_for_upsert():
     # upsert-latest semantics require a unique link_id (deviation from data-dict INDEX)
     assert traffic_status.c.link_id.unique is True
     assert set(traffic_status.c.keys()) == {
-        "id", "link_id", "speed", "state", "travel_time", "updated_at"
+        "id", "link_id", "speed", "state", "travel_time", "traffic_time", "updated_at"
     }
 
 def test_transit_raw_columns():

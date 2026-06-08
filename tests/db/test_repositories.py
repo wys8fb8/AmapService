@@ -41,17 +41,20 @@ def test_road_link_insert_then_update_replaces_coords(tmp_path):
 def test_traffic_upsert_latest_only(tmp_path):
     e = _engine(tmp_path)
     rid = 5130516143645130888
-    s1 = upsert_traffic_status(e, [{"link_id": rid, "speed": 89, "state": 1, "travel_time": 59}])
+    s1 = upsert_traffic_status(e, [{"link_id": rid, "speed": 89, "state": 1, "travel_time": 59,
+                                    "traffic_time": "2026-05-18 14:51:04"}])
     assert s1["inserted"] == 1 and s1["updated"] == 0
-    s2 = upsert_traffic_status(e, [{"link_id": rid, "speed": 40, "state": 3, "travel_time": 120}])
+    s2 = upsert_traffic_status(e, [{"link_id": rid, "speed": 40, "state": 3, "travel_time": 120,
+                                    "traffic_time": "2026-05-18 14:53:04"}])
     assert s2["inserted"] == 0 and s2["updated"] == 1
 
     with e.connect() as c:
         assert c.execute(select(func.count()).select_from(traffic_status)).scalar() == 1
         row = c.execute(
-            select(traffic_status.c.speed, traffic_status.c.state, traffic_status.c.travel_time)
+            select(traffic_status.c.speed, traffic_status.c.state, traffic_status.c.travel_time,
+                   traffic_status.c.traffic_time)
         ).one()
-        assert tuple(row) == (40, 3, 120)
+        assert tuple(row) == (40, 3, 120, "2026-05-18 14:53:04")   # latest值含路况时间
 
 
 def test_road_link_dup_in_batch_counts_distinct(tmp_path):

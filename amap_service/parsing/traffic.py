@@ -1,5 +1,20 @@
 """Parse traffic/status into repository-ready rows, aggregating segmented links."""
+import datetime
 from typing import Iterator, Optional
+
+# Amap's top-level `utcSeconds` is Unix epoch seconds; 路况时间 is presented in China time (UTC+8).
+_TRAFFIC_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
+
+def format_traffic_time(utc_seconds) -> Optional[str]:
+    """Unix epoch seconds → "yyyy-MM-dd HH:mm:ss" (UTC+8); None if missing/invalid."""
+    if utc_seconds is None:
+        return None
+    try:
+        dt = datetime.datetime.fromtimestamp(int(utc_seconds), _TRAFFIC_TZ)
+    except (ValueError, TypeError, OSError, OverflowError):
+        return None
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _as_int(value):
@@ -32,8 +47,12 @@ def _aggregate_sections(sections: list[dict]) -> tuple[Optional[int], Optional[i
     return speed, state, travel_time
 
 
-def parse_traffic_item(item: dict) -> dict:
-    """One linkStates element → {link_id, speed, state, travel_time} (sections aggregated)."""
+def parse_traffic_item(item: dict, traffic_time: Optional[str] = None) -> dict:
+    """One linkStates element → {link_id, speed, state, travel_time, traffic_time} (sections aggregated).
+
+    `traffic_time` is the response-wide 路况时间 (from top-level utcSeconds); it is the same for
+    every link in a fetch, so the caller passes it in.
+    """
     sections = item.get("listSectionStatus")
     if sections:
         speed, state, travel_time = _aggregate_sections(sections)
@@ -46,9 +65,11 @@ def parse_traffic_item(item: dict) -> dict:
         "speed": _as_int(speed),
         "state": _as_int(state),
         "travel_time": _as_int(travel_time),
+        "traffic_time": traffic_time,
     }
 
 
 def parse_traffic(payload: dict) -> Iterator[dict]:
+    traffic_time = format_traffic_time(payload.get("utcSeconds"))
     for item in payload.get("linkStates", []):
-        yield parse_traffic_item(item)
+        yield parse_traffic_item(item, traffic_time)

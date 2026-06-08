@@ -5,6 +5,7 @@ from sqlalchemy import Engine, select
 
 from amap_service.db.schema import road_link_coord
 from amap_service.sdk import geometry
+from amap_service.sdk.connector import GraphConnector
 from amap_service.sdk.matcher import LinkMatcher
 
 
@@ -17,16 +18,22 @@ class LinkInfo:
 class TrackConverter:
     def __init__(self, engine: Engine, tolerance_m: float = 30.0, reverse_angle_deg: float = 90.0,
                  against_track_deg: float = 120.0, loop_window: int = 8, loop_return_m: float = 10.0,
-                 jut_deg: float = 60.0, jut_neighbor_deg: float = 45.0, jut_offtrack_m: float = 15.0):
+                 jut_deg: float = 60.0, jut_neighbor_deg: float = 45.0, jut_offtrack_m: float = 15.0,
+                 against_window_frac: float = 0.2, against_window_m: float = 80.0,
+                 connect_gap_m: float = 8.0, max_fill_links: int = 8):
         self.engine = engine
         self.reverse_angle_deg = reverse_angle_deg
         self.against_track_deg = against_track_deg   # drop a segment heading more than this against the route
+        self.against_window_frac = against_window_frac  # against-track check looks only at the local stretch of
+        self.against_window_m = against_window_m         # track (this fraction of total length, min this many m)
         self.loop_window = loop_window               # look this many segments ahead for a return-to-start loop
         self.loop_return_m = loop_return_m           # a segment start this close to an earlier end = loop
         self.jut_deg = jut_deg                       # a segment turning more than this off BOTH neighbours = jut
         self.jut_neighbor_deg = jut_neighbor_deg     # ...while the neighbours agree within this (route goes straight)
         self.jut_offtrack_m = jut_offtrack_m         # ...and only if it also strays this far off the track
         self.matcher = LinkMatcher(engine, tolerance_m, reverse_angle_deg=reverse_angle_deg)
+        self.connector = GraphConnector(engine, connect_gap_m=connect_gap_m,
+                                        max_fill_links=max_fill_links)
 
     def _matched_segments(self, track: str) -> list[dict]:
         """Match a GPS track to an ordered sequence of road links and emit each link's FULL
@@ -56,10 +63,14 @@ class TrackConverter:
         return segments
 
     def linetrack_to_linkinfos(self, track: str) -> list[LinkInfo]:
-        """GPS track string → ordered LinkInfo list with reverse_coords flags."""
+        """GPS track string → ordered LinkInfo list with reverse_coords flags.
+
+        Missing connecting links are spliced back in (graph path-completion) so the
+        returned chain is topologically continuous.
+        """
         return [
             LinkInfo(link_id=s["link_id"], reverse_coords=s["reverse_coords"])
-            for s in self._matched_segments(track)
+            for s in self.connector.fill(self._matched_segments(track))
         ]
 
     def linetrack_to_segments(self, track: str, passes: int = 1,
@@ -95,6 +106,9 @@ class TrackConverter:
         segments = self._drop_against_track(segments, coords)
         segments = self._drop_loops(segments)
         segments = self._drop_juts(segments, coords)
+        # connectivity repair: splice back any link missing between consecutive segments
+        # (never matched, or removed above) so the stored chain has no holes.
+        segments = self.connector.fill(segments)
         return segments
 
     @staticmethod
@@ -103,12 +117,33 @@ class TrackConverter:
         return (pts[0], pts[-1]) if len(pts) >= 2 else (None, None)
 
     @staticmethod
-    def _track_bearing_at(coords, point):
+    def _cumulative_arc(coords: list) -> list:
+        arc = [0.0]
+        for i in range(1, len(coords)):
+            arc.append(arc[-1] + geometry.haversine(coords[i - 1], coords[i]))
+        return arc
+
+    @staticmethod
+    def _segment_mid_arcs(segments: list) -> tuple:
+        """Per-segment midpoint position along the chain (cumulative metres), and total length."""
+        mids, cum = [], 0.0
+        for seg in segments:
+            pts = geometry.parse_track(seg["line_track"])
+            seg_len = (sum(geometry.haversine(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+                       if len(pts) >= 2 else 0.0)
+            mids.append(cum + seg_len / 2.0)
+            cum += seg_len
+        return mids, cum
+
+    @staticmethod
+    def _track_bearing_local(coords, point, window) -> float:
+        """Bearing of the track segment nearest `point`, searched only within `window` vertices."""
+        idxs = [k for k in window if k < len(coords) - 1] or list(range(len(coords) - 1))
         best_dist, best_bearing = float("inf"), 0.0
-        for i in range(len(coords) - 1):
-            d = geometry.point_to_segment_distance(point, coords[i], coords[i + 1])
+        for k in idxs:
+            d = geometry.point_to_segment_distance(point, coords[k], coords[k + 1])
             if d < best_dist:
-                best_dist, best_bearing = d, geometry.bearing(coords[i], coords[i + 1])
+                best_dist, best_bearing = d, geometry.bearing(coords[k], coords[k + 1])
         return best_bearing
 
     @staticmethod
@@ -144,15 +179,27 @@ class TrackConverter:
         if len(coords) < 2:
             return segments
         doubled = self._doubled_track_mask(coords)
+        carc = self._cumulative_arc(coords)
+        track_len = carc[-1]
+        seg_mid_arc, total_seg = self._segment_mid_arcs(segments)
+        half = max(self.against_window_m, self.against_window_frac * track_len)
         kept = []
-        for seg in segments:
+        for idx, seg in enumerate(segments):
             pts = geometry.parse_track(seg["line_track"])
             if len(pts) >= 2:
                 seg_bearing = geometry.bearing(pts[0], pts[-1])
                 mid = pts[len(pts) // 2]
-                ni = min(range(len(coords)), key=lambda k: geometry.haversine(coords[k], mid))
+                # Compare only against the LOCAL stretch of track this segment maps to.
+                # An out-and-back route overlaps itself in space, but the two legs sit far
+                # apart in arc length — windowing stops a forward segment being compared with
+                # (and wrongly judged opposite to) the anti-parallel return leg.
+                expected = (seg_mid_arc[idx] / total_seg * track_len) if total_seg else None
+                window = [k for k in range(len(coords))
+                          if expected is None or abs(carc[k] - expected) <= half] or list(range(len(coords)))
+                ni = min(window, key=lambda k: geometry.haversine(coords[k], mid))
+                tb = self._track_bearing_local(coords, mid, window)
                 if (not doubled[ni]
-                        and geometry.angle_diff(seg_bearing, self._track_bearing_at(coords, mid)) > self.against_track_deg):
+                        and geometry.angle_diff(seg_bearing, tb) > self.against_track_deg):
                     continue
             kept.append(seg)
         return kept

@@ -218,6 +218,58 @@ def test_undivided_out_and_back_yields_link_twice(tmp_path):
     assert [(s["link_id"], s["reverse_coords"]) for s in segs] == [(1, False), (1, True)]
 
 
+def test_drop_against_track_window_protects_overlapping_return_leg(tmp_path):
+    # Out-and-back route: an outbound east leg and a return west leg ~31m apart (too far for the
+    # doubled-track mask to flag). A forward east segment sits between the legs, spatially closest
+    # to the anti-parallel RETURN vertex. The arc-length window ties it to its local (outbound) leg
+    # so it is KEPT; comparing against the whole track (window=all) wrongly drops it. This is the
+    # 192-路 龙州路 false-drop in miniature.
+    e = make_engine(DatabaseConfig(type="sqlite", sqlite=SqliteConfig(path=str(tmp_path / "t.db"))))
+    init_db(e)
+    out = [(0.0002 * k, 31.0) for k in range(8)]
+    back = [(out[-1][0] - 0.0002 * k, 31.00028) for k in range(8)]
+    coords = out + back
+    segs = [
+        {"link_id": 99, "reverse_coords": False, "line_track": "0.0006,31.00015;0.0010,31.00015"},  # bridge, east
+        {"link_id": 1, "reverse_coords": False, "line_track": "0.0010,31.0;0.0014,31.0"},            # outbound east
+        {"link_id": 2, "reverse_coords": False, "line_track": "0.0006,31.00028;0.0002,31.00028"},    # return west
+    ]
+    windowed = TrackConverter(e)
+    assert 99 in [s["link_id"] for s in windowed._drop_against_track([dict(s) for s in segs], coords)]
+    # window = whole track reproduces the old global-nearest behaviour, which drops the bridge
+    glob = TrackConverter(e, against_window_frac=10.0, against_window_m=1e9)
+    assert 99 not in [s["link_id"] for s in glob._drop_against_track([dict(s) for s in segs], coords)]
+
+
+def test_linetrack_to_segments_fills_missing_link(tmp_path):
+    # three connected north-bound links; a sparse 2-point GPS track lands on links 1 and 3 only,
+    # skipping link 2. Connectivity repair must splice link 2 back so the chain is continuous.
+    e = make_engine(DatabaseConfig(type="sqlite", sqlite=SqliteConfig(path=str(tmp_path / "t.db"))))
+    init_db(e)
+    upsert_road_links(e, [
+        {"link_id": 1, "road_name": "A", "length": 1, "formway": 15, "roadclass": 9,
+         "line_track": "", "coords": [(0.0, 0.0), (0.0, 0.0009)]},
+        {"link_id": 2, "road_name": "B", "length": 1, "formway": 15, "roadclass": 9,
+         "line_track": "", "coords": [(0.0, 0.0009), (0.0, 0.0018)]},
+        {"link_id": 3, "road_name": "C", "length": 1, "formway": 15, "roadclass": 9,
+         "line_track": "", "coords": [(0.0, 0.0018), (0.0, 0.0027)]},
+    ])
+    conv = TrackConverter(e, tolerance_m=30.0)
+    segs = conv.linetrack_to_segments("0.0,0.00005;0.0,0.0026", passes=1)
+    assert [s["link_id"] for s in segs] == [1, 2, 3]
+
+
+def test_cumulative_arc_and_segment_mid_arcs():
+    from amap_service.sdk import geometry as g
+    coords = [(0.0, 0.0), (0.0, 0.0009), (0.0, 0.0018)]
+    arc = TrackConverter._cumulative_arc(coords)
+    assert arc[0] == 0.0 and arc[1] < arc[2]
+    assert abs(arc[2] - (g.haversine(coords[0], coords[1]) + g.haversine(coords[1], coords[2]))) < 1e-6
+    segs = [{"line_track": "0.0,0.0;0.0,0.0009"}, {"line_track": "0.0,0.0009;0.0,0.0018"}]
+    mids, total = TrackConverter._segment_mid_arcs(segs)
+    assert mids[0] < mids[1] and total > mids[1]
+
+
 def test_doubled_track_mask_flags_turnaround():
     # north then south over the same line -> the overlapping vertices are flagged doubled
     from amap_service.sdk import geometry as g
