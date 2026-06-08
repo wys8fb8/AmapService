@@ -14,7 +14,7 @@ _EPS_M = 1e-6
 @dataclass
 class ChainLink:
     link_id: int
-    points: list           # [(lng, lat), ...] 行进方向
+    points: list[tuple[float, float]]  # [(lng, lat), ...] 行进方向
     arc_start: float       # 链上累计弧长(米)起点
     arc_end: float         # 终点
 
@@ -34,15 +34,17 @@ def build_chain(segments: list[dict]) -> list[ChainLink]:
     return chain
 
 
-def _link_at(chain: list[ChainLink], arc: float) -> int:
-    """覆盖给定弧长的 link_id（钳到链范围）。"""
+def _link_at(chain: list[ChainLink], arc: float) -> int | None:
+    """覆盖给定弧长的 link_id（超出链范围则钳到最近端点对应的 link）。"""
     for cl in chain:
         if cl.arc_start - _EPS_M <= arc <= cl.arc_end + _EPS_M:
             return cl.link_id
-    return chain[-1].link_id if chain else None
+    if not chain:
+        return None
+    return chain[0].link_id if arc < chain[0].arc_start else chain[-1].link_id
 
 
-def section_links(chain: list[ChainLink], s_lo: float, s_hi: float) -> list[tuple]:
+def section_links(chain: list[ChainLink], s_lo: float, s_hi: float) -> list[tuple[int, float]]:
     """弧长区间 [s_lo, s_hi] 内每条 link 的重叠长度，按链顺序，重叠>0 才列。
     零长区间（两站投到同一点）兜底为「覆盖点所在 link」占满（长度 1.0 -> 占比 100）。"""
     if s_hi - s_lo <= _EPS_M:

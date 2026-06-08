@@ -41,3 +41,16 @@ def test_section_links_zero_length_span_returns_covering_link_full():
     mid = chain[0].arc_end * 0.5
     pairs = section_links(chain, mid, mid)  # zero-length
     assert len(pairs) == 1 and pairs[0][0] == 7 and pairs[0][1] == 1.0
+
+
+from amap_service.sdk.station_traffic import _link_at
+
+
+def test_link_at_clamps_out_of_range():
+    chain = build_chain([
+        _seg(1, "0.0,0.0;0.001,0.0"),
+        _seg(2, "0.001,0.0;0.002,0.0"),
+    ])
+    assert _link_at(chain, -50.0) == 1          # before chain start -> first link
+    assert _link_at(chain, chain[-1].arc_end + 50.0) == 2  # past chain end -> last link
+    assert _link_at([], 0.0) is None            # empty chain
