@@ -145,3 +145,52 @@ def test_stations_for_drops_incomplete_station():
 def test_line_name_of():
     assert _line_name_of(_line_obj()) == "192"
     assert _line_name_of({"Data": {}}) == ""
+
+
+from amap_service.config.schema import DatabaseConfig, SqliteConfig
+from amap_service.db.engine import make_engine
+from amap_service.db.migrate import init_db
+from amap_service.db.repositories import replace_transit_segments, upsert_traffic_status
+from amap_service.sdk.station_traffic import StationTrafficResolver
+
+
+def _engine(tmp_path):
+    e = make_engine(DatabaseConfig(type="sqlite", sqlite=SqliteConfig(path=str(tmp_path / "t.db"))))
+    init_db(e)
+    return e
+
+
+def _line_two_links():
+    # 直线 3 个站；链=link1[0,0.001]+link2[0.001,0.002]
+    return {"Data": {"LineName": "T1", "UpObject": {"Stations": [
+        {"LevelId": 1, "Lon02": 0.0, "Lat02": 0.0},
+        {"LevelId": 2, "Lon02": 0.001, "Lat02": 0.0},   # 落在两 link 接缝
+        {"LevelId": 3, "Lon02": 0.002, "Lat02": 0.0},
+    ]}}}
+
+
+def test_station_section_basic_pct_and_state(tmp_path):
+    e = _engine(tmp_path)
+    replace_transit_segments(e, "T1", 0, None, [
+        {"link_id": 1, "reverse_coords": 0, "line_track": "0.0,0.0;0.001,0.0"},
+        {"link_id": 2, "reverse_coords": 0, "line_track": "0.001,0.0;0.002,0.0"},
+    ])
+    upsert_traffic_status(e, [{"link_id": 1, "state": 3}])  # link2 无记录 -> 默认 1
+    r = StationTrafficResolver(e)
+    # 站2 区间 = 站1->站2 = 整条 link1
+    sec = r.station_section(_line_two_links(), 0, 2)
+    assert sec == [{"link_id": 1, "state": 3, "pct": 100}]
+    # 站3 区间 = 站2->站3 = 整条 link2，路况缺失默认 1
+    sec3 = r.station_section(_line_two_links(), 0, 3)
+    assert sec3 == [{"link_id": 2, "state": 1, "pct": 100}]
+
+
+def test_station_section_invalid_inputs(tmp_path):
+    e = _engine(tmp_path)
+    r = StationTrafficResolver(e)
+    # 无 transit_segment
+    assert r.station_section(_line_two_links(), 0, 2) == []
+    replace_transit_segments(e, "T1", 0, None, [
+        {"link_id": 1, "reverse_coords": 0, "line_track": "0.0,0.0;0.001,0.0"}])
+    assert r.station_section(_line_two_links(), 0, 1) == []   # level_id<2
+    assert r.station_section(_line_two_links(), 0, 99) == []  # 越界

@@ -6,6 +6,9 @@
 import math
 from dataclasses import dataclass
 
+from sqlalchemy import Engine, select
+
+from amap_service.db.schema import traffic_status, transit_segment
 from amap_service.sdk import geometry
 
 _EPS_M = 1e-6
@@ -158,3 +161,53 @@ def _stations_for(line_object: dict, direction: int) -> list[tuple]:
         out.append((lvl, lng, lat))
     out.sort(key=lambda x: x[0])
     return out
+
+
+class StationTrafficResolver:
+    """读 transit_segment + traffic_status，给出相邻两站之间各路段的路况与长度占比。"""
+
+    def __init__(self, engine: Engine, sample_step_m: float = 4.0, default_state: int = 1):
+        self.engine = engine
+        self.sample_step_m = sample_step_m
+        self.default_state = default_state
+
+    def station_section(self, line_object: dict, direction: int, level_id: int) -> list[dict]:
+        """方法一：站 level_id-1 -> 站 level_id 之间的路段列表。
+        -> [{"link_id", "state", "pct"}, ...]，pct 之和=100；无数据/越界返回 []。"""
+        stations = _stations_for(line_object, direction)
+        idx = next((k for k, s in enumerate(stations) if s[0] == level_id), None)
+        if idx is None or idx == 0:
+            return []
+        chain = build_chain(self._load_segments(_line_name_of(line_object), direction))
+        if not chain:
+            return []
+        arcs = align_stations(sample_chain(chain, self.sample_step_m),
+                              [(lng, lat) for _, lng, lat in stations])
+        pairs = section_links(chain, arcs[idx - 1], arcs[idx])
+        return self._entries(pairs)
+
+    def _entries(self, pairs: list[tuple]) -> list[dict]:
+        traffic = self._load_traffic([lid for lid, _ in pairs])
+        pcts = largest_remainder([ov for _, ov in pairs])
+        return [{"link_id": lid, "state": traffic.get(lid, self.default_state), "pct": p}
+                for (lid, _), p in zip(pairs, pcts)]
+
+    def _load_segments(self, line_name: str, direction: int) -> list[dict]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(transit_segment.c.link_id, transit_segment.c.line_track)
+                .where((transit_segment.c.line_name == line_name)
+                       & (transit_segment.c.direction == direction))
+                .order_by(transit_segment.c.seq)
+            ).all()
+        return [{"link_id": r.link_id, "line_track": r.line_track} for r in rows]
+
+    def _load_traffic(self, link_ids: list[int]) -> dict:
+        if not link_ids:
+            return {}
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(traffic_status.c.link_id, traffic_status.c.state)
+                .where(traffic_status.c.link_id.in_(set(link_ids)))
+            ).all()
+        return {r.link_id: r.state for r in rows}
