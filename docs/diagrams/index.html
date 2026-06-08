@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>高德地图数据服务 — 项目文档</title>
+<style>
+  body { margin:0; font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; color:#1f2d3d; background:#f7f9fc; }
+  header { padding:32px 32px 16px; border-bottom:1px solid #e3e8ef; background:#fff; }
+  h1 { margin:0 0 6px; font-size:24px; }
+  .sub { color:#6b7a8d; font-size:13px; line-height:1.7; }
+  main { max-width:980px; margin:24px auto; padding:0 20px; display:grid; gap:16px; }
+  a.card { display:block; text-decoration:none; color:inherit; background:#fff; border:1px solid #e3e8ef; border-radius:12px; padding:18px 22px; box-shadow:0 1px 3px rgba(20,40,80,.05); transition:.15s; }
+  a.card:hover { border-color:#9bbcff; box-shadow:0 4px 14px rgba(47,111,235,.12); transform:translateY(-1px); }
+  .no { display:inline-block; width:30px; height:30px; line-height:30px; text-align:center; background:#2f6feb; color:#fff; border-radius:8px; font-weight:700; margin-right:10px; }
+  .t { font-size:17px; font-weight:600; }
+  .d { color:#6b7a8d; font-size:13px; margin-top:8px; line-height:1.75; }
+  footer { color:#6b7a8d; font-size:12px; text-align:center; padding:24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>高德地图数据服务 · 项目文档</h1>
+  <div class="sub">三份必备文档 · 中文 · 离线可用（已内置 Mermaid，双击即可查看，无需联网）。<br>建议用 Chrome / Edge / Firefox 打开。</div>
+</header>
+<main>
+  <a class="card" href="./01-系统架构思维导图.html">
+    <div><span class="no">1</span><span class="t">系统架构图（思维导图）</span></div>
+    <div class="d">一张图看清三大需求、分层模块（config/db/clients/parsing/pipelines/sdk/cache/scheduler/cli）、外部依赖与运行入口。</div>
+  </a>
+  <a class="card" href="./02-数据流向图.html">
+    <div><span class="no">2</span><span class="t">数据流向图</span></div>
+    <div class="d">三条主数据流：路网/路况落地、公交阶段一（原始响应存档）、公交阶段二（线路轨迹经 SDK 转有序路段）；并标注各数据表写入策略。</div>
+  </a>
+  <a class="card" href="./03-线路转路网过程图.html">
+    <div><span class="no">3</span><span class="t">线路 → 路网 转换过程图（核心逻辑）</span></div>
+    <div class="d">完整匹配管线：解析 → 方向感知/避高架/迟滞/连通匹配 → 每遍清理 → 定向输出 → 整体清理（对面车道/折返闭环/垂直 jut，各带闸门）→ 二次匹配补漂移缺口 → 落库。附每道判据与阈值表。</div>
+  </a>
+</main>
+<footer>高德地图数据服务 · 文档自包含离线版 · docs/diagrams/</footer>
+</body>
+</html>

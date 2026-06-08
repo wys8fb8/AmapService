@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+logs/
+.env
+config/config.yaml
+demo/mock_data/
+demo/

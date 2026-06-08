@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>高德地图数据服务 — 线路转路网过程图</title>
+<style>
+  :root { --ink:#1f2d3d; --muted:#6b7a8d; --line:#e3e8ef; --accent:#2f6feb; --bg:#f7f9fc; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:24px 32px 12px; border-bottom:1px solid var(--line); background:#fff; }
+  h1 { margin:0 0 6px; font-size:22px; }
+  .sub { color:var(--muted); font-size:13px; line-height:1.7; }
+  .badge { display:inline-block; background:#eef3ff; color:var(--accent); border:1px solid #d6e2ff; border-radius:4px; padding:1px 8px; font-size:12px; margin-right:6px; }
+  main { padding:18px 24px 40px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px 8px 16px; box-shadow:0 1px 3px rgba(20,40,80,.04); }
+  .mermaid { width:100%; overflow:auto; }
+  h2 { font-size:15px; margin:22px 24px 6px; }
+  .legend { margin:8px 24px; padding:12px 16px; background:#fff; border:1px dashed var(--line); border-radius:8px; color:var(--muted); font-size:12.5px; line-height:1.95; }
+  .legend b { color:var(--ink); }
+  table { border-collapse:collapse; width:calc(100% - 48px); margin:8px 24px; font-size:12.5px; }
+  th,td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:#f1f5fb; color:var(--ink); }
+  code { background:#f2f5f9; padding:1px 5px; border-radius:4px; font-size:12px; }
+  #err { display:none; margin:16px 24px; padding:12px 16px; background:#fff4f4; border:1px solid #f2c2c2; color:#a33; border-radius:8px; font-size:13px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>高德地图数据服务 · 线路 → 路网 转换过程图</h1>
+  <div class="sub">
+    <span class="badge">文档 3/3</span>核心逻辑（需求2 阶段二调用需求3 SDK）· 全量含清理启发式 · 离线可用<br>
+    输入：公交线路 GPS 轨迹字符串；输出：有序、连续、定向的路网路段（transit_segment）。
+  </div>
+</header>
+
+<div id="err">⚠️ 图形未渲染。请用较新的浏览器打开，并确保同目录存在 <code>mermaid.min.js</code>。</div>
+
+<main>
+  <div class="card">
+  <pre class="mermaid">
+flowchart TD
+  classDef io fill:#eef3ff,stroke:#9bbcff,color:#1f2d3d;
+  classDef step fill:#ffffff,stroke:#9aa7b8,color:#1f2d3d;
+  classDef clean fill:#fff7e6,stroke:#f0c674,color:#5b4a16;
+  classDef dec fill:#f3eaff,stroke:#c5a3f0,color:#3a2a55;
+  classDef out fill:#eafaf1,stroke:#86d6a8,color:#15402a;
+
+  IN["输入：LineLonLat 轨迹串<br/>经度,纬度;经度,纬度;..."]:::io
+  PARSE["parse_track 解析为坐标点列"]:::step
+  IN --> PARSE --> M
+
+  subgraph M["① 逐点匹配 LinkMatcher.match_track"]
+    direction TB
+    BBOX["bbox 候选检索<br/>从 road_link_coord 取附近 link 几何"]:::step
+    PT["逐 GPS 点：到每条候选 link 的最近距离 + 该段方位"]:::step
+    COST["代价 = 距离 + 道路等级惩罚<br/>高速rc0 +60m ｜ 高架rc6 +25m（避开高架/高速）"]:::step
+    DIRP["方向感知：优先与 GPS 行进方向一致的 link<br/>（分车道选对侧；只有反向那条时才 opposed）"]:::step
+    HYST["迟滞保持：当前 link 仍在最优+15m 内才保持<br/>（防止误上高架后一直粘着）"]:::step
+    CONN["连通优先：否则选与上一段共端点(<8m)的 link"]:::step
+    FLIP["方向翻转则拆新段<br/>不分车道双向 → 同 link 出现两次(去F/回T)"]:::step
+    VOTE["每段 reverse 投票（opposed 多数 → 逆行）"]:::step
+    DETOUR["去绕路孤岛：前→该→后 比 前→后 多绕 >80m 则删"]:::clean
+    OFFT["去偏离突兀：该段顶点偏离原轨迹 >25m 则删"]:::clean
+    BBOX --> PT --> COST --> DIRP --> HYST --> CONN --> FLIP --> VOTE --> DETOUR --> OFFT
+  end
+
+  M --> EMIT["② 输出完整路段几何<br/>按 reverse 定向（逆行则反转坐标）= line_track"]:::step
+
+  EMIT --> CLEAN
+  subgraph CLEAN["③ 整体清理（与『原始轨迹』比对）"]
+    direction TB
+    AGN["去对面车道/反向：段向与原轨迹相差 >120° 则删<br/>闸门：仅在『原轨迹未折返』处删（保护不分车道返程）"]:::clean
+    LOOP["去折返闭环：某段起点绕回更早某段终点 <10m<br/>→ 中间『绕出又绕回』整段删"]:::clean
+    JUT["去垂直 jut：相对前后两段都偏转 >60° 且前后同向 <45°<br/>闸门：还需偏离原轨迹 >15m 才删（保护在轨迹上的真实绕行）"]:::clean
+    AGN --> LOOP --> JUT
+  end
+
+  CLEAN --> P2{"二次匹配？<br/>refine_passes ≥ 2"}:::dec
+  P2 -->|是| ASM["assemble_track 路段首尾相连<br/>+ densify 重采样(15m) 成干净轨迹"]:::step
+  ASM --> M
+  P2 -->|否| OUT
+
+  CLEAN --> OUT["④ 落库 transit_segment<br/>line_name·nor_code·direction·seq<br/>link_id·reverse_coords·line_track"]:::out
+  </pre>
+  </div>
+
+  <h2>各阶段判据与阈值（与代码一致，均为可配参数）</h2>
+  <table>
+    <tr><th>阶段</th><th>做什么</th><th>判据 / 阈值（配置项）</th><th>解决的真实问题</th></tr>
+    <tr><td>道路等级惩罚</td><td>代价里给高等级路加罚分，距离接近时让地面路胜出</td><td>高速rc0 +60m、高架rc6 +25m（<code>roadclass_penalty</code>）</td><td>47路误匹配「内环高架路」，地面「中山北路」更近反被压住</td></tr>
+    <tr><td>方向感知</td><td>候选里优先与 GPS 同向的 link</td><td>夹角 ≤ <code>reverse_angle_deg</code>(90°) 视为同向</td><td>分车道误匹配对面车道、被判逆行</td></tr>
+    <tr><td>迟滞保持</td><td>仅当当前 link 仍接近最优才保持，否则切更优路</td><td>差值 &lt; <code>hysteresis_m</code>(15m)</td><td>误上高架后一路粘着高架不下来</td></tr>
+    <tr><td>连通优先</td><td>优先选与上一段共端点的 link</td><td>端点距 &lt; <code>connect_gap_m</code>(8m)</td><td>路口处碎跳到平行/横街，序列不连贯</td></tr>
+    <tr><td>方向翻转拆段</td><td>同 link 上行进方向翻转则拆为两段</td><td>opposed 翻转即拆</td><td>不分车道折返被合并、reverse 投票互相抵消</td></tr>
+    <tr><td>去绕路孤岛</td><td>删「插入它反而绕远」的离线段</td><td>多绕 &gt; <code>detour_gap_m</code>(80m)</td><td>617m 长穿越路被单点误匹配，两头甩出 ~270m</td></tr>
+    <tr><td>去偏离突兀</td><td>删整体偏离原轨迹的段</td><td>顶点偏离 &gt; <code>track_fit_m</code>(25m)</td><td>个别段离原轨迹很远、突兀</td></tr>
+    <tr><td>去对面车道/反向</td><td>删与路线方向相反的段（带折返闸门）</td><td>相差 &gt; <code>against_track_deg</code>(120°)，且该处轨迹未折返</td><td>对面车道反向段；同时保护单环线/掉头的合法返程</td></tr>
+    <tr><td>去折返闭环</td><td>删「绕出去又绕回起点」的整段环</td><td>起点回到更早终点 &lt; <code>loop_return_m</code>(10m)，窗口 8 段</td><td>二次匹配在缺口处兜圈匹配对面车道（路网不通）</td></tr>
+    <tr><td>去垂直 jut</td><td>删 GPS 漂移到垂直横街的段（带偏离闸门）</td><td>偏转 &gt; <code>jut_deg</code>(60°)+前后同向 &lt; <code>jut_neighbor_deg</code>(45°)+偏离 &gt; <code>jut_offtrack_m</code>(15m)</td><td>「安国路」垂直横街漂移段（删）；「嘉陵路」在轨迹上的真实绕行（保留）</td></tr>
+    <tr><td>二次匹配</td><td>首遍结果连成干净轨迹再匹一遍，补 GPS 漂移缺口</td><td><code>refine_passes</code>(2)、<code>densify_step_m</code>(15m)</td><td>路段间断一截子（连接 link 上无 GPS 点）</td></tr>
+  </table>
+
+  <div class="legend">
+    <b>设计原则</b>：① 不裁剪——输出完整路网路段（真实路网粒度够细，路段即段）；② 一切「删/留」判据都以<strong>原始 GPS 轨迹</strong>为准绳；③ 清理只删「确实离开轨迹/反向/绕路」的段，对「真转弯、单环线双向、在轨迹上的绕行」一律保留；④ 所有阈值均为 <code>TrackConverter</code> / <code>config.sdk</code> 可配参数，便于按城市路网微调。<br>
+    <b>双向经过</b>：不分车道（单 link 双向）的路来回各经一次 → 同 link 出现两次（去 reverse=False、回 reverse=True）；分车道则去回本就是两条独立 link。
+  </div>
+</main>
+
+<footer>高德地图数据服务 · 线路转路网核心逻辑 · 本文件离线自包含</footer>
+
+<script src="./mermaid.min.js"></script>
+<script>
+  try {
+    mermaid.initialize({ startOnLoad:true, theme:'default', securityLevel:'loose',
+      flowchart:{ htmlLabels:true, curve:'basis', nodeSpacing:42, rankSpacing:48 } });
+  } catch (e) { document.getElementById('err').style.display='block'; console.error(e); }
+  window.addEventListener('load', function(){
+    setTimeout(function(){ if(!document.querySelector('.mermaid svg')) document.getElementById('err').style.display='block'; }, 1500);
+  });
+</script>
+</body>
+</html>

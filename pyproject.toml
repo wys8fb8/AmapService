@@ -1,0 +1,34 @@
+[project]
+name = "amap-service"
+version = "0.1.0"
+description = "Amap map-data landing service (road network, traffic, transit, GPS↔link SDK)"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2",
+  "PyYAML>=6",
+  "SQLAlchemy>=2",
+  "APScheduler>=3.10,<4",
+  "httpx>=0.27",
+  "ijson>=3.2",
+  "redis>=5",
+]
+
+[project.scripts]
+amap-service = "amap_service.cli:main"
+
+[project.optional-dependencies]
+mysql = ["PyMySQL>=1.1"]
+dev = ["pytest>=8", "fakeredis>=2"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["amap_service*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# importlib mode avoids basename collisions (e.g. tests/config/test_schema.py vs tests/db/test_schema.py)
+addopts = "--import-mode=importlib"

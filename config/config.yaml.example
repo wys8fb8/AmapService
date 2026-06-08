@@ -1,0 +1,100 @@
+# 高德地图数据服务 — 示例配置
+# 复制为 config/config.yaml 并填入真实凭据后使用：
+#   cp config/config.yaml.example config/config.yaml
+# 敏感项可用环境变量覆盖（双下划线分层），例如：
+#   export AMAP__TRANSIT__PASSWORD=真实密码
+#
+# 命令：
+#   amap-service initdb                 # 建表
+#   amap-service run-once road-network  # 跑一次全量路网
+#   amap-service run-once traffic       # 跑一次实时路况
+#   amap-service run-once transit       # 需求2 阶段一：抓取并存档原始响应
+#   amap-service run                    # 启动 cron 长驻 daemon
+
+# ── 地图数据上游（需求1）──────────────────────────────
+amap:
+  endpoint: "http://192.168.102.102:8080"
+  auth:
+    type: none            # 日志入参为「无」；如需鉴权改为 header 并填 headers
+    headers: {}
+  jobs:
+    road_network:
+      path: "/g5_server/map/api/areaLinkPub"
+      cron: "0 1 * * *"   # 每天 01:00
+      enabled: true
+      parse_mode: stream  # 全量路网响应大 → 流式解析省内存
+    traffic_status:
+      path: "/g5_server/map/api/traffic/status"
+      cron: "*/2 * * * *" # 每 2 分钟
+      enabled: true
+      parse_mode: memory  # 路况响应小 → 一次性解析，可重试
+
+# ── 公交线路上游（需求2，不同主机/端口）────────────────
+transit:
+  enabled: true
+  cron: "0 3 * * *"
+  username: "yangs"             # appkey（用于 token 签名）
+  password: "改成真实密码"       # appsecret（建议用环境变量覆盖）
+  loginname: "yangs"            # GetLineFilterNow 的 loginname（与 appkey 不同时填这里；留空回退用 username）
+  token_url: "http://203.156.246.118:36000/API/Token/GetToken"
+  line_list_url: "http://203.156.246.115:36004/002006/api/BstClientDataService/GetLineFilterNow"
+  line_entity_url: "http://203.156.246.115:36006/002001/api/RoadEntityService/GetRoadLineEntity"
+  # 已根据真实响应结构确定：
+  token_path: "data.AccessToken"   # token 在 GetToken 响应中的 dot-path
+  line_name_path: "Data"           # GetLineFilterNow 响应里线路列表的 dot-path
+  line_name_field: "Roadline"      # 每条线路里作为 lineName 的字段（线路号，如 "47"）
+  company_field: "Company"         # 线路列表里公司名所在字段
+  # 线路筛选（叠加：先按 companys 过滤 → 再按 lines 过滤 → 再 line_limit 截断）：
+  companys: "巴士一公司,巴士二公司,巴士三公司,巴士四公司,巴士五公司"  # 只处理这些公司的线路；留空=不限公司
+  lines: ""                        # 指定线路号白名单，如 "47,192"；留空=不限（按 companys/limit）
+  line_limit: 0                    # 处理条数上限；0=全量（探查时可设小值，如 5）
+  token_ttl_seconds: 3600
+
+# ── 数据库（需求1.4，默认 sqlite）─────────────────────
+database:
+  type: sqlite                   # sqlite | mysql
+  sqlite:
+    path: "./road_network.db"
+  mysql:
+    host: "127.0.0.1"
+    port: 3306
+    user: "amap"
+    password: "改成真实密码"
+    database: "road_network"
+    charset: "utf8mb4"
+
+# ── Redis（需求1.5，可选，启用才用）────────────────────
+redis:
+  enabled: false
+  host: "127.0.0.1"
+  port: 6379
+  db: 0
+  password: null
+  uses:
+    latest_traffic_snapshot: true   # 最新路况快照
+    incremental_detection: true     # 增量/变更检测（跳过未变 link）
+    token_cache: true               # 公交 token 缓存
+
+# ── HTTP 行为 ─────────────────────────────────────
+http:
+  timeout_seconds: 30
+  max_retries: 3
+  backoff_seconds: 2
+
+# ── 需求3 SDK 参数 ────────────────────────────────
+sdk:
+  match_tolerance_m: 30   # 匹配容差（米）
+  reverse_angle_deg: 90   # 方位角夹角 > 此值判反向
+  dedup_jitter_m: 5
+  refine_passes: 2        # 二次匹配：首遍结果加密后再匹一遍，补 GPS 漂移造成的缺口（1=只匹一次）
+  densify_step_m: 15      # 二次匹配前的重采样步长（米）
+  against_track_deg: 120  # 路段方向与原轨迹相差超此值即删（去对面车道/反向段）
+  loop_return_m: 10       # 折返闭环判定阈值（米）：绕出去又绕回起点的环整段删除
+  jut_deg: 60            # 某段相对前后两段都偏转超此值（且前后同向）即判为垂直横街 jut 删除
+  jut_neighbor_deg: 45   # 前后两段方向差需小于此值才算"直行"（保护真转弯不被误删）
+  jut_offtrack_m: 15     # jut 还需偏离原轨迹超此值(米)才删（在轨迹上的真实绕行段保留）
+
+# ── 日志 ──────────────────────────────────────────
+logging:
+  level: INFO
+  file: "./logs/amap_service.log"

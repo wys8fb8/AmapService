@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>高德地图数据服务 — 数据流向图</title>
+<style>
+  :root { --ink:#1f2d3d; --muted:#6b7a8d; --line:#e3e8ef; --accent:#2f6feb; --bg:#f7f9fc; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; color:var(--ink); background:var(--bg); }
+  header { padding:24px 32px 12px; border-bottom:1px solid var(--line); background:#fff; }
+  h1 { margin:0 0 6px; font-size:22px; }
+  .sub { color:var(--muted); font-size:13px; line-height:1.7; }
+  .badge { display:inline-block; background:#eef3ff; color:var(--accent); border:1px solid #d6e2ff; border-radius:4px; padding:1px 8px; font-size:12px; margin-right:6px; }
+  main { padding:18px 24px 40px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px 8px 16px; box-shadow:0 1px 3px rgba(20,40,80,.04); }
+  .mermaid { width:100%; overflow:auto; }
+  .legend { margin:14px 24px; padding:12px 16px; background:#fff; border:1px dashed var(--line); border-radius:8px; color:var(--muted); font-size:12.5px; line-height:1.9; }
+  .legend b { color:var(--ink); }
+  table { border-collapse:collapse; width:100%; margin-top:8px; font-size:12.5px; }
+  th,td { border:1px solid var(--line); padding:6px 10px; text-align:left; }
+  th { background:#f1f5fb; color:var(--ink); }
+  #err { display:none; margin:16px 24px; padding:12px 16px; background:#fff4f4; border:1px solid #f2c2c2; color:#a33; border-radius:8px; font-size:13px; }
+  footer { color:var(--muted); font-size:12px; text-align:center; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>高德地图数据服务 · 数据流向图</h1>
+  <div class="sub">
+    <span class="badge">文档 2/3</span>面向领导与技术 · 离线可用<br>
+    三条主数据流：路网/路况落地、公交阶段一（存档）、公交阶段二（转路段）。实线=数据流，虚线=调度/旁路。
+  </div>
+</header>
+
+<div id="err">⚠️ 图形未渲染。请用较新的浏览器打开，并确保同目录存在 <code>mermaid.min.js</code>。</div>
+
+<main>
+  <div class="card">
+  <pre class="mermaid">
+flowchart TD
+  classDef src fill:#eef3ff,stroke:#9bbcff,color:#1f2d3d;
+  classDef proc fill:#ffffff,stroke:#9aa7b8,color:#1f2d3d;
+  classDef db fill:#eafaf1,stroke:#86d6a8,color:#15402a;
+  classDef opt fill:#fff7e6,stroke:#f0c674,color:#5b4a16;
+
+  %% ===== 需求1 =====
+  subgraph R1["需求1 · 路网与实时路况落地（cron 驱动）"]
+    direction TB
+    SCH(["APScheduler<br/>路网 0 1 * * * ｜ 路况 */2 * * * *"]):::opt
+    UP1["高德上游<br/>areaLinkPub ｜ traffic/status"]:::src
+    HC["HttpClient<br/>get_json(memory) ｜ stream_items(ijson)"]:::proc
+    PR1["parsing<br/>road_network ｜ traffic<br/>坐标成对 · 64位linkId · 分段聚合"]:::proc
+    UPS1["repositories.upsert<br/>路网整段替换 ｜ 路况只存最新"]:::proc
+    DB1[("road_link · road_link_coord<br/>traffic_status")]:::db
+    RDS[("Redis 可选<br/>最新快照 · 增量检测")]:::opt
+    SCH -. 触发 .-> HC
+    UP1 -->|HTTP GET| HC --> PR1 --> UPS1 -->|upsert| DB1
+    UPS1 -. 启用时 .-> RDS
+  end
+
+  %% ===== 需求2 阶段一 =====
+  subgraph R2A["需求2 · 阶段一：打通链路 + 原始响应存档"]
+    direction TB
+    UP2["公交上游<br/>GetToken ｜ GetLineFilterNow ｜ GetRoadLineEntity"]:::src
+    TC["TransitClient<br/>MD5签名取token · Bearer透传<br/>capture-first 不抛错"]:::proc
+    ARC["pipelines.transit<br/>逐接口原始响应存档"]:::proc
+    DB2[("transit_line_raw<br/>+ logs/transit_raw/*.json")]:::db
+    UP2 -->|token→列表→逐条线路对象| TC --> ARC -->|insert| DB2
+  end
+
+  %% ===== 需求2 阶段二 + 需求3 =====
+  subgraph R2B["需求2 · 阶段二：线路轨迹 → 有序路网路段（用需求3 SDK）"]
+    direction TB
+    LE["线路对象 Data<br/>UpObject/DownObject.LineLonLat"]:::src
+    CONV["TrackConverter（需求3 SDK）<br/>方向感知匹配 · 二次匹配 · 多道清理"]:::proc
+    RDREAD[("读 road_link_coord<br/>路网几何")]:::db
+    DB3[("transit_segment<br/>line_name·direction·seq<br/>link_id·reverse_coords·line_track")]:::db
+    LE --> CONV --> DB3
+    RDREAD -. 空间匹配只读 .-> CONV
+  end
+
+  DB1 -. 路网作为匹配底图 .-> CONV
+  TC -. 阶段二复用链路 .-> LE
+  </pre>
+  </div>
+
+  <div class="legend">
+    <b>存储落点（数据字典对应）</b>
+    <table>
+      <tr><th>表</th><th>来源</th><th>写入策略</th></tr>
+      <tr><td>road_link / road_link_coord</td><td>需求1 全量路网 areaLinkPub</td><td>按 link_id upsert；坐标整段删后重插</td></tr>
+      <tr><td>traffic_status</td><td>需求1 全量实时路况</td><td>按 link_id upsert，只存最新并刷新时间；分段聚合到顶层</td></tr>
+      <tr><td>transit_line_raw</td><td>需求2 阶段一</td><td>追加存档原始响应（含 logs/transit_raw 文件）</td></tr>
+      <tr><td>transit_segment</td><td>需求2 阶段二（经 SDK）</td><td>按 (line_name, direction) 整段替换，含 reverse_coords 与 line_track</td></tr>
+    </table>
+  </div>
+
+  <div class="legend">
+    <b>要点</b>：① 需求1 由 cron 长驻 daemon 驱动；路网响应大，可配 stream 模式边下边解析省内存。② 公交三接口走不同主机，token 需 MD5 签名、后续请求带 Bearer。③ 阶段二的 SDK 以已落地的路网（road_link_coord）为底图做空间匹配，所以须先跑需求1 灌满路网，再跑 transit-build。
+  </div>
+</main>
+
+<footer>高德地图数据服务 · 数据流向 · 本文件离线自包含</footer>
+
+<script src="./mermaid.min.js"></script>
+<script>
+  try {
+    mermaid.initialize({ startOnLoad:true, theme:'default', securityLevel:'loose',
+      flowchart:{ htmlLabels:true, curve:'basis', nodeSpacing:45, rankSpacing:55 } });
+  } catch (e) { document.getElementById('err').style.display='block'; console.error(e); }
+  window.addEventListener('load', function(){
+    setTimeout(function(){ if(!document.querySelector('.mermaid svg')) document.getElementById('err').style.display='block'; }, 1200);
+  });
+</script>
+</body>
+</html>
