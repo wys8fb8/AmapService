@@ -223,3 +223,33 @@ def test_line_sections_skips_direction_without_segments(tmp_path):
 
 def test_resolver_is_exported():
     assert ExportedResolver is StationTrafficResolver
+
+
+def _out_and_back_line():
+    # 4 个站：去程近、远端、回程中、回程近起点（空间上贴去程近）
+    return {"Data": {"LineName": "OB", "UpObject": {"Stations": [
+        {"LevelId": 1, "Lon02": 0.0,    "Lat02": 0.0},
+        {"LevelId": 2, "Lon02": 0.0095, "Lat02": 0.0},
+        {"LevelId": 3, "Lon02": 0.005,  "Lat02": 0.0},
+        {"LevelId": 4, "Lon02": 0.0,    "Lat02": 0.0},
+    ]}}}
+
+
+def test_out_and_back_same_link_in_distinct_sections(tmp_path):
+    e = _engine(tmp_path)
+    # 去程 link 1，回程 link 1（同一 link 两遍，几何反向）
+    replace_transit_segments(e, "OB", 0, None, [
+        {"link_id": 1, "reverse_coords": 0,
+         "line_track": "0.0,0.0;0.0025,0.0;0.005,0.0;0.0075,0.0;0.01,0.0"},
+        {"link_id": 1, "reverse_coords": 1,
+         "line_track": "0.01,0.0;0.0075,0.0;0.005,0.0;0.0025,0.0;0.0,0.0"},
+    ])
+    out = StationTrafficResolver(e).line_sections(_out_and_back_line())
+    sections = out[0]
+    # 末区间(站3->站4，回程回到起点附近)应覆盖回程那一遍的 link 1，pct 和=100
+    last = list(sections[-1].values())[0]
+    assert [x["link_id"] for x in last] == [1]
+    assert sum(x["pct"] for x in last) == 100
+    # 每个区间 pct 都=100
+    for d in sections:
+        assert sum(x["pct"] for x in list(d.values())[0]) == 100
