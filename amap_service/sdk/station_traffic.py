@@ -78,9 +78,9 @@ def largest_remainder(lengths: list[float]) -> list[int]:
     return floors
 
 
-def sample_chain(chain: list[ChainLink], step_m: float = 4.0) -> list[tuple]:
+def sample_chain(chain: list[ChainLink], step_m: float = 4.0) -> list[tuple[float, tuple[float, float]]]:
     """沿链按 step_m 采样，返回 [(arc, (lng,lat)), ...]，arc 非递减、含每段端点。"""
-    samples: list[tuple] = []
+    samples: list[tuple[float, tuple[float, float]]] = []
     for cl in chain:
         pts = cl.points
         local = 0.0
@@ -99,7 +99,7 @@ def sample_chain(chain: list[ChainLink], step_m: float = 4.0) -> list[tuple]:
     return samples
 
 
-def align_stations(samples: list[tuple], stations: list[tuple]) -> list[float]:
+def align_stations(samples: list[tuple[float, tuple[float, float]]], stations: list[tuple[float, float]]) -> list[float]:
     """把站点(按 LevelId 顺序)单调对齐到链上，返回每站的弧长位置(非递减)。
 
     DP：dp[i][j] = 站 i 落到采样点 j、且 j 的 arc >= 站 i-1 所选 arc 时，各站到落点距离和的最小值。
@@ -146,7 +146,7 @@ def _line_name_of(line_object: dict) -> str:
     return str(_data_of(line_object).get("LineName") or "")
 
 
-def _stations_for(line_object: dict, direction: int) -> list[tuple]:
+def _stations_for(line_object: dict, direction: int) -> list[tuple[int, float, float]]:
     """方向(0->UpObject,1->DownObject)的站点 [(LevelId, lng, lat), ...]，按 LevelId 升序；
     缺方向对象或缺坐标的站点丢弃。"""
     data = _data_of(line_object)
@@ -155,6 +155,8 @@ def _stations_for(line_object: dict, direction: int) -> list[tuple]:
         return []
     out = []
     for s in obj.get("Stations") or []:
+        if not isinstance(s, dict):
+            continue
         lvl, lng, lat = s.get("LevelId"), s.get("Lon02"), s.get("Lat02")
         if lvl is None or lng is None or lat is None:
             continue
@@ -184,7 +186,8 @@ class StationTrafficResolver:
         arcs = align_stations(sample_chain(chain, self.sample_step_m),
                               [(lng, lat) for _, lng, lat in stations])
         pairs = section_links(chain, arcs[idx - 1], arcs[idx])
-        return self._entries(pairs)
+        traffic = self._load_traffic([lid for lid, _ in pairs])
+        return self._entries(pairs, traffic)
 
     def line_sections(self, line_object: dict) -> dict:
         """方法二：整条线路所有方向、所有站间区间。
@@ -199,18 +202,18 @@ class StationTrafficResolver:
             chain = build_chain(self._load_segments(line_name, direction))
             if not chain:
                 continue
+            traffic = self._load_traffic([cl.link_id for cl in chain])
             arcs = align_stations(sample_chain(chain, self.sample_step_m),
                                   [(lng, lat) for _, lng, lat in stations])
             dir_list = []
             for idx in range(1, len(stations)):
                 level_id = stations[idx][0]
                 pairs = section_links(chain, arcs[idx - 1], arcs[idx])
-                dir_list.append({level_id: self._entries(pairs)})
+                dir_list.append({level_id: self._entries(pairs, traffic)})
             result[direction] = dir_list
         return result
 
-    def _entries(self, pairs: list[tuple]) -> list[dict]:
-        traffic = self._load_traffic([lid for lid, _ in pairs])
+    def _entries(self, pairs: list[tuple], traffic: dict) -> list[dict]:
         pcts = largest_remainder([ov for _, ov in pairs])
         return [{"link_id": lid, "state": traffic.get(lid, self.default_state), "pct": p}
                 for (lid, _), p in zip(pairs, pcts)]
