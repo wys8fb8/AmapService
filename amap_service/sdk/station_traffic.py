@@ -73,3 +73,59 @@ def largest_remainder(lengths: list[float]) -> list[int]:
     for k in range(rem):
         floors[order[k]] += 1
     return floors
+
+
+def sample_chain(chain: list[ChainLink], step_m: float = 4.0) -> list[tuple]:
+    """沿链按 step_m 采样，返回 [(arc, (lng,lat)), ...]，arc 非递减、含每段端点。"""
+    samples: list[tuple] = []
+    for cl in chain:
+        pts = cl.points
+        local = 0.0
+        samples.append((cl.arc_start, pts[0]))
+        for a, b in zip(pts, pts[1:]):
+            d = geometry.haversine(a, b)
+            if d <= 0:
+                continue
+            n = int(d // step_m)
+            for k in range(1, n + 1):
+                t = k * step_m / d
+                samples.append((cl.arc_start + local + k * step_m,
+                                (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)))
+            local += d
+            samples.append((cl.arc_start + local, b))
+    return samples
+
+
+def align_stations(samples: list[tuple], stations: list[tuple]) -> list[float]:
+    """把站点(按 LevelId 顺序)单调对齐到链上，返回每站的弧长位置(非递减)。
+
+    DP：dp[i][j] = 站 i 落到采样点 j、且 j 的 arc >= 站 i-1 所选 arc 时，各站到落点距离和的最小值。
+    用前缀最小值(带 argmin)在 O(站数×采样数) 内求解，回溯得各站弧长。"""
+    M, N = len(samples), len(stations)
+    if N == 0:
+        return []
+    if M == 0:
+        return [0.0] * N
+    arcs = [s[0] for s in samples]
+    pts = [s[1] for s in samples]
+
+    def cost(i, j):
+        return geometry.haversine(stations[i], pts[j])
+
+    dp = [cost(0, j) for j in range(M)]
+    back = [[-1] * M for _ in range(N)]
+    for i in range(1, N):
+        best, best_k = float("inf"), 0
+        new = [0.0] * M
+        for j in range(M):
+            if dp[j] < best:
+                best, best_k = dp[j], j
+            new[j] = cost(i, j) + best
+            back[i][j] = best_k
+        dp = new
+    end = min(range(M), key=lambda j: dp[j])
+    chosen = [0] * N
+    chosen[N - 1] = end
+    for i in range(N - 1, 0, -1):
+        chosen[i - 1] = back[i][chosen[i]]
+    return [arcs[chosen[i]] for i in range(N)]

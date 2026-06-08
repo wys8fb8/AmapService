@@ -73,3 +73,36 @@ def test_largest_remainder_edge_cases():
     assert largest_remainder([]) == []
     assert largest_remainder([5.0]) == [100]
     assert largest_remainder([0.0, 0.0]) == [0, 0]  # 总长 0 不分配
+
+
+from amap_service.sdk.station_traffic import sample_chain, align_stations
+
+
+def test_sample_chain_monotonic_arcs_cover_endpoints():
+    chain = build_chain([_seg(1, "0.0,0.0;0.001,0.0;0.002,0.0")])
+    samples = sample_chain(chain, step_m=20.0)
+    arcs = [a for a, _ in samples]
+    assert arcs == sorted(arcs)               # 非递减
+    assert abs(arcs[0]) < 1e-6                 # 含起点
+    assert abs(arcs[-1] - chain[0].arc_end) < 1.0  # 含终点
+
+
+def test_align_stations_out_and_back_disambiguates():
+    # 单车道回头：去程 0->0.01°，回程 0.01°->0（同一几何反向），同一 link 两遍
+    out = "0.0,0.0;0.0025,0.0;0.005,0.0;0.0075,0.0;0.01,0.0"
+    back = "0.01,0.0;0.0075,0.0;0.005,0.0;0.0025,0.0;0.0,0.0"
+    chain = build_chain([_seg(1, out), _seg(1, back)])
+    total = chain[-1].arc_end
+    samples = sample_chain(chain, step_m=20.0)
+    # 4 个站：去程近(0.002), 远端(0.0095), 回程(0.005), 回程近起点(0.001)
+    stations = [(0.002, 0.0), (0.0095, 0.0), (0.005, 0.0), (0.001, 0.0)]
+    arcs = align_stations(samples, stations)
+    assert arcs == sorted(arcs)        # 单调
+    assert arcs[0] < total / 2         # 首站在去程腿
+    assert arcs[3] > total / 2         # 末站(空间上贴起点)被正确推到回程腿
+    assert arcs[2] > total / 2         # 第3站也在回程腿
+
+
+def test_align_stations_empty_inputs():
+    assert align_stations([], [(0.0, 0.0)]) == [0.0]
+    assert align_stations([(0.0, (0.0, 0.0))], []) == []
