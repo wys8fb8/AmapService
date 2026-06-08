@@ -194,3 +194,32 @@ def test_station_section_invalid_inputs(tmp_path):
         {"link_id": 1, "reverse_coords": 0, "line_track": "0.0,0.0;0.001,0.0"}])
     assert r.station_section(_line_two_links(), 0, 1) == []   # level_id<2
     assert r.station_section(_line_two_links(), 0, 99) == []  # 越界
+
+
+from amap_service.sdk import StationTrafficResolver as ExportedResolver
+
+
+def test_line_sections_shape_and_pct_sum(tmp_path):
+    e = _engine(tmp_path)
+    replace_transit_segments(e, "T1", 0, None, [
+        {"link_id": 1, "reverse_coords": 0, "line_track": "0.0,0.0;0.001,0.0"},
+        {"link_id": 2, "reverse_coords": 0, "line_track": "0.001,0.0;0.002,0.0"},
+    ])
+    upsert_traffic_status(e, [{"link_id": 1, "state": 2}])
+    out = StationTrafficResolver(e).line_sections(_line_two_links())
+    assert set(out.keys()) == {0}                         # 只有上行
+    dir0 = out[0]
+    assert [list(d.keys())[0] for d in dir0] == [2, 3]    # 从第2站起，每站一条
+    for d in dir0:
+        entries = list(d.values())[0]
+        assert sum(x["pct"] for x in entries) == 100      # 每区间和=100
+    assert dir0[0][2] == [{"link_id": 1, "state": 2, "pct": 100}]
+
+
+def test_line_sections_skips_direction_without_segments(tmp_path):
+    e = _engine(tmp_path)  # 没有任何 transit_segment
+    assert StationTrafficResolver(e).line_sections(_line_two_links()) == {}
+
+
+def test_resolver_is_exported():
+    assert ExportedResolver is StationTrafficResolver

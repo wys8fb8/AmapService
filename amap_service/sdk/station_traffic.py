@@ -186,6 +186,29 @@ class StationTrafficResolver:
         pairs = section_links(chain, arcs[idx - 1], arcs[idx])
         return self._entries(pairs)
 
+    def line_sections(self, line_object: dict) -> dict:
+        """方法二：整条线路所有方向、所有站间区间。
+        -> { direction: [ {level_id: [ {link_id, state, pct}, ... ]}, ... ] }
+        缺方向/无 transit_segment 的方向不出现。"""
+        line_name = _line_name_of(line_object)
+        result: dict = {}
+        for direction in (0, 1):
+            stations = _stations_for(line_object, direction)
+            if len(stations) < 2:
+                continue
+            chain = build_chain(self._load_segments(line_name, direction))
+            if not chain:
+                continue
+            arcs = align_stations(sample_chain(chain, self.sample_step_m),
+                                  [(lng, lat) for _, lng, lat in stations])
+            dir_list = []
+            for idx in range(1, len(stations)):
+                level_id = stations[idx][0]
+                pairs = section_links(chain, arcs[idx - 1], arcs[idx])
+                dir_list.append({level_id: self._entries(pairs)})
+            result[direction] = dir_list
+        return result
+
     def _entries(self, pairs: list[tuple]) -> list[dict]:
         traffic = self._load_traffic([lid for lid, _ in pairs])
         pcts = largest_remainder([ov for _, ov in pairs])
