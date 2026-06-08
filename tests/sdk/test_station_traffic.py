@@ -106,3 +106,42 @@ def test_align_stations_out_and_back_disambiguates():
 def test_align_stations_empty_inputs():
     assert align_stations([], [(0.0, 0.0)]) == [0.0]
     assert align_stations([(0.0, (0.0, 0.0))], []) == []
+
+
+from amap_service.sdk.station_traffic import _stations_for, _line_name_of
+
+
+def _line_obj():
+    return {"Data": {
+        "LineName": "192",
+        "UpObject": {"UpDown": 0, "Stations": [
+            {"LevelId": 2, "Lon02": 121.42, "Lat02": 31.13},
+            {"LevelId": 1, "Lon02": 121.40, "Lat02": 31.10},  # 乱序，应按 LevelId 排
+            {"LevelId": 3, "Lon02": 121.44, "Lat02": 31.16},
+        ]},
+        "DownObject": None,
+    }}
+
+
+def test_stations_for_sorted_by_levelid():
+    st = _stations_for(_line_obj(), 0)
+    assert [lvl for lvl, _, _ in st] == [1, 2, 3]
+    assert st[0] == (1, 121.40, 31.10)
+
+
+def test_stations_for_missing_direction_empty():
+    assert _stations_for(_line_obj(), 1) == []          # DownObject 为 None
+    assert _stations_for({"Data": {}}, 0) == []
+
+
+def test_stations_for_drops_incomplete_station():
+    obj = {"Data": {"UpObject": {"Stations": [
+        {"LevelId": 1, "Lon02": None, "Lat02": 31.1},   # 缺坐标 -> 丢
+        {"LevelId": 2, "Lon02": 121.4, "Lat02": 31.1},
+    ]}}}
+    assert [lvl for lvl, _, _ in _stations_for(obj, 0)] == [2]
+
+
+def test_line_name_of():
+    assert _line_name_of(_line_obj()) == "192"
+    assert _line_name_of({"Data": {}}) == ""

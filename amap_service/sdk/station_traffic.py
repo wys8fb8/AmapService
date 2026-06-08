@@ -129,3 +129,32 @@ def align_stations(samples: list[tuple], stations: list[tuple]) -> list[float]:
     for i in range(N - 1, 0, -1):
         chosen[i - 1] = back[i][chosen[i]]
     return [arcs[chosen[i]] for i in range(N)]
+
+
+def _data_of(line_object: dict) -> dict:
+    """容忍带 Data 包裹或已解包两种形态。"""
+    if not isinstance(line_object, dict):
+        return {}
+    data = line_object.get("Data")
+    return data if isinstance(data, dict) else line_object
+
+
+def _line_name_of(line_object: dict) -> str:
+    return str(_data_of(line_object).get("LineName") or "")
+
+
+def _stations_for(line_object: dict, direction: int) -> list[tuple]:
+    """方向(0->UpObject,1->DownObject)的站点 [(LevelId, lng, lat), ...]，按 LevelId 升序；
+    缺方向对象或缺坐标的站点丢弃。"""
+    data = _data_of(line_object)
+    obj = data.get("UpObject" if direction == 0 else "DownObject")
+    if not isinstance(obj, dict):
+        return []
+    out = []
+    for s in obj.get("Stations") or []:
+        lvl, lng, lat = s.get("LevelId"), s.get("Lon02"), s.get("Lat02")
+        if lvl is None or lng is None or lat is None:
+            continue
+        out.append((lvl, lng, lat))
+    out.sort(key=lambda x: x[0])
+    return out
