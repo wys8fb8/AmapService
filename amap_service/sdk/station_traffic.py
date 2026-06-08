@@ -1,0 +1,56 @@
+"""需求3 扩展 SDK：相邻两站之间各路段的路况与长度占比，供前端渲染站间线段配色。
+
+纯算法函数（无 DB，可单测）+ StationTrafficResolver（读 transit_segment + traffic_status）。
+坐标 (经度, 纬度)，与 geometry 一致。
+"""
+import math
+from dataclasses import dataclass
+
+from amap_service.sdk import geometry
+
+_EPS_M = 1e-6
+
+
+@dataclass
+class ChainLink:
+    link_id: int
+    points: list           # [(lng, lat), ...] 行进方向
+    arc_start: float       # 链上累计弧长(米)起点
+    arc_end: float         # 终点
+
+
+def build_chain(segments: list[dict]) -> list[ChainLink]:
+    """把有序 transit_segment 段拼成带累计弧长的链。每段用其 line_track 几何，
+    弧长跨段连续累加；不足两点的段跳过。同一 link_id 出现两遍 => 两个独立区间。"""
+    chain: list[ChainLink] = []
+    arc = 0.0
+    for seg in segments:
+        pts = geometry.parse_track(seg["line_track"]) if seg.get("line_track") else []
+        if len(pts) < 2:
+            continue
+        seg_len = sum(geometry.haversine(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+        chain.append(ChainLink(seg["link_id"], pts, arc, arc + seg_len))
+        arc += seg_len
+    return chain
+
+
+def _link_at(chain: list[ChainLink], arc: float) -> int:
+    """覆盖给定弧长的 link_id（钳到链范围）。"""
+    for cl in chain:
+        if cl.arc_start - _EPS_M <= arc <= cl.arc_end + _EPS_M:
+            return cl.link_id
+    return chain[-1].link_id if chain else None
+
+
+def section_links(chain: list[ChainLink], s_lo: float, s_hi: float) -> list[tuple]:
+    """弧长区间 [s_lo, s_hi] 内每条 link 的重叠长度，按链顺序，重叠>0 才列。
+    零长区间（两站投到同一点）兜底为「覆盖点所在 link」占满（长度 1.0 -> 占比 100）。"""
+    if s_hi - s_lo <= _EPS_M:
+        lid = _link_at(chain, s_hi)
+        return [(lid, 1.0)] if lid is not None else []
+    out = []
+    for cl in chain:
+        ov = min(s_hi, cl.arc_end) - max(s_lo, cl.arc_start)
+        if ov > _EPS_M:
+            out.append((cl.link_id, ov))
+    return out
