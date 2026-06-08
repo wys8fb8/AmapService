@@ -56,3 +56,20 @@ def section_links(chain: list[ChainLink], s_lo: float, s_hi: float) -> list[tupl
         if ov > _EPS_M:
             out.append((cl.link_id, ov))
     return out
+
+
+def largest_remainder(lengths: list[float]) -> list[int]:
+    """把各长度按比例取整到百分比，和恒为 100（最大余额法）。空表返回空；总长<=0 全 0。"""
+    n = len(lengths)
+    if n == 0:
+        return []
+    total = sum(lengths)
+    if total <= 0:
+        return [0] * n
+    raw = [x / total * 100 for x in lengths]
+    floors = [int(math.floor(r)) for r in raw]
+    rem = 100 - sum(floors)
+    order = sorted(range(n), key=lambda i: (raw[i] - floors[i], i), reverse=True)
+    for k in range(rem):
+        floors[order[k]] += 1
+    return floors

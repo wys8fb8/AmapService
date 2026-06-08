@@ -54,3 +54,22 @@ def test_link_at_clamps_out_of_range():
     assert _link_at(chain, -50.0) == 1          # before chain start -> first link
     assert _link_at(chain, chain[-1].arc_end + 50.0) == 2  # past chain end -> last link
     assert _link_at([], 0.0) is None            # empty chain
+
+
+from amap_service.sdk.station_traffic import largest_remainder
+
+
+def test_largest_remainder_sums_to_100():
+    assert sum(largest_remainder([1.0, 1.0, 1.0])) == 100
+    assert largest_remainder([1.0, 1.0, 1.0]) == [33, 33, 34]  # 余 1 给最大余数
+
+
+def test_largest_remainder_proportional():
+    out = largest_remainder([50.0, 30.0, 20.0])
+    assert out == [50, 30, 20] and sum(out) == 100
+
+
+def test_largest_remainder_edge_cases():
+    assert largest_remainder([]) == []
+    assert largest_remainder([5.0]) == [100]
+    assert largest_remainder([0.0, 0.0]) == [0, 0]  # 总长 0 不分配
