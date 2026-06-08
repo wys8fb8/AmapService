@@ -213,7 +213,7 @@ class StationTrafficResolver:
             result[direction] = dir_list
         return result
 
-    def _entries(self, pairs: list[tuple], traffic: dict) -> list[dict]:
+    def _entries(self, pairs: list[tuple[int, float]], traffic: dict) -> list[dict]:
         pcts = largest_remainder([ov for _, ov in pairs])
         return [{"link_id": lid, "state": traffic.get(lid, self.default_state), "pct": p}
                 for (lid, _), p in zip(pairs, pcts)]
