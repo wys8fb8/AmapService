@@ -120,7 +120,9 @@ def parse_line_stations(raw) -> list:
     形如 {"Data": {"LineName","NorCode","UpObject":{"UpDown":0,"Stations":[{LevelId,LevelName,
     Lon02,Lat02},...]}, "DownObject":{...}|None}}。返回
     [{line_name, nor_code, direction, stations:[{level_id, level_name, longitude, latitude}]}, ...]；
-    缺坐标的站点丢弃。方向号取自 UpDown，缺失则按槽位兜底（UpObject->0, DownObject->1）。"""
+    缺坐标的站点丢弃。方向号取自 UpDown，缺失则按槽位兜底（UpObject->0, DownObject->1）。
+    与 parse_line_tracks 不同：方向缺 UpDown 时不跳过而是兜底——带推断方向的站点列表仍可用
+    （轨迹缺方向则无法路由、故 tracks 跳过；站点列表无此限制）。"""
     data = raw.get("Data") if isinstance(raw, dict) else None
     if not isinstance(data, dict):
         return []
