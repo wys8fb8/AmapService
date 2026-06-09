@@ -130,3 +130,47 @@ def test_traffic_cache_keys_get_ttl(tmp_path):
     # latest 与 sig 都应带 TTL（接近 600s）
     assert 0 < r.ttl("traffic:latest:1") <= 600
     assert 0 < r.ttl("traffic:sig:1") <= 600
+
+
+def test_on_complete_receives_full_rows_even_with_incremental():
+    """开 incremental 时, on_complete 仍收到全量 rows(非变更子集)。"""
+    from amap_service.pipelines.traffic import run_traffic
+
+    payload = {"utcSeconds": 1700000000, "linkStates": [
+        {"linkId": 1, "speed": 10, "state": 2, "travelTime": 5},
+        {"linkId": 2, "speed": 20, "state": 1, "travelTime": 7}]}
+
+    class FakeClient:
+        def get_json(self, url):
+            return payload
+
+    class FakeCache:
+        enabled = True
+        def __init__(self):
+            self.store = {}
+        def mget(self, keys):
+            return [self.store.get(k) for k in keys]
+        def mset(self, mapping, ttl=None):
+            self.store.update(mapping)
+
+    import tempfile, os
+    from amap_service.db.engine import make_engine
+    from amap_service.db.migrate import init_db
+    from amap_service.config.schema import DatabaseConfig, SqliteConfig
+    d = tempfile.mkdtemp()
+    eng = make_engine(DatabaseConfig(type="sqlite",
+                                     sqlite=SqliteConfig(path=os.path.join(d, "t.db"))))
+    init_db(eng)
+    cache = FakeCache()
+    # 预置 link 1 的签名为"未变" → incremental 只会把 link 2 写 DB
+    cache.store["traffic:sig:1"] = "10:2:5"
+
+    received = {}
+    run_traffic(eng, FakeClient(), "http://x", "/t", "memory",
+                cache=cache, snapshot=True, incremental=True,
+                on_complete=lambda rows: received.update({"n": len(list(rows))}))
+
+    assert received["n"] == 2  # 全量,不是变更子集(1)
+    # 全量镜像: 两个 link 都进 Redis snapshot
+    assert "traffic:latest:1" in cache.store
+    assert "traffic:latest:2" in cache.store

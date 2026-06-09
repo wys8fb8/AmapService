@@ -31,6 +31,7 @@ def run_traffic(
     snapshot: bool = False,
     incremental: bool = False,
     traffic_ttl_seconds: int = 600,
+    on_complete=None,
 ) -> dict:
     url = endpoint.rstrip("/") + path
     logger.info("traffic: fetching %s (mode=%s)", url, parse_mode)
@@ -42,33 +43,42 @@ def run_traffic(
         raise ValueError(f"unknown parse_mode: {parse_mode}")
 
     use_cache = cache is not None and getattr(cache, "enabled", False) and (snapshot or incremental)
-    if not use_cache:
+    if not use_cache and on_complete is None:
         stats = upsert_traffic_status(engine, rows)
         logger.info("traffic: done %s", stats)
         return stats
 
-    rows = list(rows)  # cache path needs multiple passes
+    all_rows = list(rows)  # 全量(可能多次遍历: 增量比对 / 全量镜像 / on_complete)
+
+    to_write = all_rows
     new_sigs = {}
-    if incremental:
-        sig_keys = [f"traffic:sig:{r['link_id']}" for r in rows]
+    if use_cache and incremental:
+        sig_keys = [f"traffic:sig:{r['link_id']}" for r in all_rows]
         old_sigs = cache.mget(sig_keys)
         changed = []
-        for row, old in zip(rows, old_sigs):
+        for row, old in zip(all_rows, old_sigs):
             sig = _signature(row)
             if old != sig:
                 changed.append(row)
                 new_sigs[f"traffic:sig:{row['link_id']}"] = sig
-        rows = changed
+        to_write = changed
 
-    stats = upsert_traffic_status(engine, rows)
+    stats = upsert_traffic_status(engine, to_write)
 
-    # 仅在 DB 全部写入成功后才推进签名/快照，避免失败批次被误判为"未变"而漏写。
-    if not stats["failed"]:
+    # 仅在 DB 写入成功后推进签名/快照，避免失败批次被误判为"未变"而漏写。
+    if use_cache and not stats["failed"]:
         if incremental and new_sigs:
             cache.mset(new_sigs, ttl=traffic_ttl_seconds)
-        if snapshot and rows:
-            cache.mset({f"traffic:latest:{row['link_id']}": json.dumps(row) for row in rows},
+        if snapshot:
+            # 全量镜像: 写所有 link 的最新值(非变更子集)，让 Redis 成为完整最新快照。
+            cache.mset({f"traffic:latest:{r['link_id']}": json.dumps(r) for r in all_rows},
                        ttl=traffic_ttl_seconds)
+
+    if on_complete is not None:
+        try:
+            on_complete(all_rows)
+        except Exception:  # noqa: BLE001 — 发布失败绝不拖垮数据落地
+            logger.exception("traffic: on_complete callback failed")
 
     logger.info("traffic: done %s (cached: snapshot=%s incremental=%s)", stats, snapshot, incremental)
     return stats
