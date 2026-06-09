@@ -13,8 +13,9 @@ import logging
 from sqlalchemy import Engine
 
 from amap_service.clients.transit import TransitClient
-from amap_service.db.repositories import replace_transit_segments
-from amap_service.parsing.transit import extract_line_records, parse_line_tracks, select_line_names
+from amap_service.db.repositories import replace_transit_segments, replace_transit_stations
+from amap_service.parsing.transit import extract_line_records, parse_line_stations, parse_line_tracks, select_line_names
+from amap_service.pipelines.section_build import run_section_build
 from amap_service.sdk import TrackConverter
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def run_transit_build(engine: Engine, transit_client: TransitClient, config) -> 
         connect_gap_m=config.sdk.connect_gap_m,
         max_fill_links=config.sdk.max_fill_links,
     )
-    stats = {"token_ok": False, "lines": 0, "directions": 0, "segments": 0, "skipped_lines": 0}
+    stats = {"token_ok": False, "lines": 0, "directions": 0, "segments": 0, "skipped_lines": 0, "sections": 0}
 
     token, _ = transit_client.get_token()
     if not token:
@@ -61,7 +62,8 @@ def run_transit_build(engine: Engine, transit_client: TransitClient, config) -> 
     for name in to_process:
         try:
             raw_entity = transit_client.get_line_entity(token, name)
-            tracks = parse_line_tracks(json.loads(raw_entity))
+            parsed = json.loads(raw_entity)
+            tracks = parse_line_tracks(parsed)
             if not tracks:
                 logger.warning("transit build: line '%s' has no directional track; skipping", name)
                 stats["skipped_lines"] += 1
@@ -80,6 +82,9 @@ def run_transit_build(engine: Engine, transit_client: TransitClient, config) -> 
                 logger.info(
                     "transit build: line %s dir %s -> %d segments", t["line_name"], t["direction"], written
                 )
+            for st in parse_line_stations(parsed):
+                replace_transit_stations(engine, st["line_name"], st["direction"],
+                                         st["nor_code"], st["stations"])
             stats["lines"] += 1
         except Exception:  # noqa: BLE001 - one bad line must not abort the whole build
             logger.exception("transit build: line '%s' failed; skipping", name)
@@ -91,5 +96,10 @@ def run_transit_build(engine: Engine, transit_client: TransitClient, config) -> 
             "transit build: processed %d line(s) but produced 0 segments — is the road network "
             "(road_link_coord) loaded? run `run-once road-network` first.", stats["lines"]
         )
+    try:
+        sec = run_section_build(engine, config)
+        stats["sections"] = sec.get("sections", 0)
+    except Exception:  # noqa: BLE001 - section-build failure must not fail the whole transit build
+        logger.exception("transit build: section-build step failed")
     logger.info("transit build: done %s", stats)
     return stats

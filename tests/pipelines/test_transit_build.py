@@ -103,3 +103,83 @@ def test_build_with_empty_road_network_yields_no_segments(tmp_path):
     assert stats["lines"] == 1 and stats["segments"] == 0   # nothing to match against, but no crash
     with e.connect() as c:
         assert c.execute(select(func.count()).select_from(transit_segment)).scalar() == 0
+
+
+# ---------------------------------------------------------------------------
+# Task 6: transit-build also writes transit_station and triggers section-build
+# ---------------------------------------------------------------------------
+
+class _FakeTransitT6:
+    def __init__(self, entity):
+        self._entity = entity
+
+    def get_token(self):
+        return "tok", None
+
+    def get_line_list(self, token):
+        return json.dumps([{"Roadline": "T1"}])
+
+    def get_line_entity(self, token, name):
+        return json.dumps(self._entity)
+
+
+class _TransitT6:
+    token_path = None
+    line_name_path = None
+    line_name_field = "Roadline"
+    company_field = "Company"
+    companys = None
+    lines = None
+    line_limit = 0
+
+    def companys_set(self):
+        return None
+
+    def lines_set(self):
+        return None
+
+
+class _SdkT6:
+    match_tolerance_m = 30.0
+    reverse_angle_deg = 90.0
+    against_track_deg = 120.0
+    loop_return_m = 10.0
+    jut_deg = 60.0
+    jut_neighbor_deg = 45.0
+    jut_offtrack_m = 15.0
+    against_window_frac = 0.2
+    against_window_m = 80.0
+    connect_gap_m = 8.0
+    max_fill_links = 8
+    refine_passes = 1
+    densify_step_m = 15.0
+    section_sample_step_m = 4.0
+
+
+class _CfgT6:
+    transit = _TransitT6()
+    sdk = _SdkT6()
+
+
+def _engine_t6(tmp_path):
+    e = make_engine(DatabaseConfig(type="sqlite", sqlite=SqliteConfig(path=str(tmp_path / "t.db"))))
+    init_db(e)
+    return e
+
+
+def test_transit_build_writes_stations_and_sections(tmp_path):
+    from amap_service.db.schema import transit_station, transit_section_link
+    e = _engine_t6(tmp_path)
+    upsert_road_links(e, [{"link_id": 1, "road_name": "R", "length": 1, "formway": 15,
+                           "roadclass": 9, "line_track": "",
+                           "coords": [(0.0, 0.0), (0.0005, 0.0), (0.001, 0.0)]}])
+    entity = {"Data": {"LineName": "T1", "NorCode": "00T1", "UpObject": {
+        "UpDown": 0, "LineLonLat": "0.0,0.0;0.0005,0.0;0.001,0.0",
+        "Stations": [{"LevelId": 1, "LevelName": "A", "Lon02": 0.0, "Lat02": 0.0},
+                     {"LevelId": 2, "LevelName": "B", "Lon02": 0.001, "Lat02": 0.0}]}}}
+    run_transit_build(e, _FakeTransitT6(entity), _CfgT6())
+    with e.connect() as c:
+        st = c.execute(select(func.count()).select_from(transit_station)).scalar()
+        sec = c.execute(select(func.count()).select_from(transit_section_link)).scalar()
+    assert st == 2
+    assert sec >= 1
