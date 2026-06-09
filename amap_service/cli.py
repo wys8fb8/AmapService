@@ -15,6 +15,9 @@ from amap_service.pipelines.transit_build import run_transit_build
 from amap_service.pipelines.traffic import run_traffic
 from amap_service.pipelines.section_build import run_section_build
 from amap_service.scheduler.runner import build_scheduler
+from amap_service.publish.client import make_mqtt_client
+from amap_service.publish.publisher import MqttPublisher
+from amap_service.views.static_cache import StaticLineCache
 
 logger = logging.getLogger(__name__)
 
@@ -79,15 +82,36 @@ def cmd_run(config_path: str) -> None:
     _configure_logging(config)
     engine, client, cache = _build(config)
     init_db(engine)
-    sched = build_scheduler(config, engine, client, cache)
+
+    on_traffic_complete = None
+    if config.mqtt.enabled:
+        mqtt_client = make_mqtt_client(config.mqtt)
+        mqtt_client.connect()
+        publisher = MqttPublisher(mqtt_client, StaticLineCache(engine), config.mqtt)
+        on_traffic_complete = publisher.publish_all
+        logger.info("mqtt publisher enabled (prefix=%s)", config.mqtt.topic_prefix)
+
+    sched = build_scheduler(config, engine, client, cache,
+                            on_traffic_complete=on_traffic_complete)
     logger.info("scheduler starting with jobs: %s", [j.id for j in sched.get_jobs()])
     sched.start()
+
+
+def cmd_serve(config_path: str) -> None:
+    config = load_config(config_path)
+    _configure_logging(config)
+    if not config.api.enabled:
+        raise SystemExit("api.enabled is false; refusing to serve")
+    import uvicorn
+    from amap_service.api.app import create_app
+    app = create_app(config)
+    uvicorn.run(app, host=config.api.host, port=config.api.port)
 
 
 def main(argv: Optional[list] = None) -> None:
     parser = argparse.ArgumentParser(prog="amap-service")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for name in ("initdb", "run"):
+    for name in ("initdb", "run", "serve"):
         sp = sub.add_parser(name)
         sp.add_argument("-c", "--config", default="config/config.yaml")
     ro = sub.add_parser("run-once")
@@ -101,6 +125,8 @@ def main(argv: Optional[list] = None) -> None:
         cmd_run_once(args.config, args.job)
     elif args.cmd == "run":
         cmd_run(args.config)
+    elif args.cmd == "serve":
+        cmd_serve(args.config)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -105,3 +105,44 @@ def test_run_once_section_build_dispatches(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "run_section_build", fake_section_build)
     cli.main(["run-once", "section-build", "-c", str(cfg_path)])
     assert seen == {"called": True, "has_engine": True}
+
+
+def test_serve_refuses_when_api_disabled(tmp_path, monkeypatch):
+    """api.enabled=false 时 serve 拒绝启动。"""
+    import pytest
+    from amap_service import cli
+    from amap_service.config.schema import AppConfig
+
+    raw = {
+        "amap": {"endpoint": "http://x", "jobs": {
+            "road_network": {"path": "/r", "cron": "0 1 * * *"},
+            "traffic_status": {"path": "/t", "cron": "*/2 * * * *"}}},
+        "transit": {"username": "u", "password": "p", "token_url": "http://a",
+                    "line_list_url": "http://b", "line_entity_url": "http://c"},
+        "api": {"enabled": False},
+    }
+    monkeypatch.setattr(cli, "load_config", lambda p: AppConfig.model_validate(raw))
+    with pytest.raises(SystemExit):
+        cli.cmd_serve("dummy.yaml")
+
+
+def test_serve_starts_uvicorn_when_enabled(monkeypatch):
+    from amap_service import cli
+    from amap_service.config.schema import AppConfig
+
+    raw = {
+        "amap": {"endpoint": "http://x", "jobs": {
+            "road_network": {"path": "/r", "cron": "0 1 * * *"},
+            "traffic_status": {"path": "/t", "cron": "*/2 * * * *"}}},
+        "transit": {"username": "u", "password": "p", "token_url": "http://a",
+                    "line_list_url": "http://b", "line_entity_url": "http://c"},
+        "database": {"type": "sqlite", "sqlite": {"path": ":memory:"}},
+        "api": {"enabled": True, "host": "1.2.3.4", "port": 9999},
+    }
+    monkeypatch.setattr(cli, "load_config", lambda p: AppConfig.model_validate(raw))
+    called = {}
+    import uvicorn
+    monkeypatch.setattr(uvicorn, "run",
+                        lambda app, host, port: called.update(host=host, port=port))
+    cli.cmd_serve("dummy.yaml")
+    assert called == {"host": "1.2.3.4", "port": 9999}
