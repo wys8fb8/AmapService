@@ -51,3 +51,49 @@ def test_no_cache_path_unchanged(tmp_path):
     e = _engine(tmp_path)
     s = run_traffic(e, _client(), "http://h", "/p")
     assert s["written"] == 2
+
+
+def test_run_traffic_incremental_only_writes_changed(tmp_path):
+    e = _engine(tmp_path)
+    import fakeredis, json as _json
+    from amap_service.cache.client import RedisCache
+    import httpx
+    from amap_service.clients.base import HttpClient
+    cache = RedisCache(fakeredis.FakeRedis())
+    payload = {"linkStates": [
+        {"linkId": 1, "speed": 80, "state": 1, "travelTime": 10},
+        {"linkId": 2, "speed": 50, "state": 2, "travelTime": 20},
+    ]}
+    def _client_for(p):
+        return HttpClient(backoff_seconds=0,
+                          transport=httpx.MockTransport(lambda req: httpx.Response(200, json=p)))
+    c1 = _client_for(payload)
+    s1 = run_traffic(e, c1, "http://h", "/g5_server/map/api/traffic/status",
+                     cache=cache, incremental=True, snapshot=True); c1.close()
+    assert s1["written"] == 2
+    c2 = _client_for(payload)
+    s2 = run_traffic(e, c2, "http://h", "/g5_server/map/api/traffic/status",
+                     cache=cache, incremental=True, snapshot=True); c2.close()
+    assert s2["written"] == 0                       # 签名未变 -> 不写
+    assert _json.loads(cache.get("traffic:latest:1"))["speed"] == 80   # snapshot 可读
+
+
+def test_run_traffic_incremental_detects_change(tmp_path):
+    e = _engine(tmp_path)
+    import fakeredis, httpx
+    from amap_service.cache.client import RedisCache
+    from amap_service.clients.base import HttpClient
+    cache = RedisCache(fakeredis.FakeRedis())
+    def _client_for(p):
+        return HttpClient(backoff_seconds=0,
+                          transport=httpx.MockTransport(lambda req: httpx.Response(200, json=p)))
+    c1 = _client_for({"linkStates": [{"linkId": 1, "speed": 80, "state": 1, "travelTime": 10}]})
+    run_traffic(e, c1, "http://h", "/g5_server/map/api/traffic/status",
+                cache=cache, incremental=True); c1.close()
+    c2 = _client_for({"linkStates": [{"linkId": 1, "speed": 20, "state": 3, "travelTime": 40}]})
+    s = run_traffic(e, c2, "http://h", "/g5_server/map/api/traffic/status",
+                    cache=cache, incremental=True); c2.close()
+    assert s["written"] == 1
+    with e.connect() as c:
+        assert tuple(c.execute(select(traffic_status.c.speed, traffic_status.c.state)
+                               .where(traffic_status.c.link_id == 1)).one()) == (20, 3)

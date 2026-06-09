@@ -46,22 +46,24 @@ def run_traffic(
         logger.info("traffic: done %s", stats)
         return stats
 
-    rows = list(rows)  # cache path needs multiple passes over the rows
+    rows = list(rows)  # cache path needs multiple passes
     if incremental:
-        changed = []
-        for row in rows:
-            key = f"traffic:sig:{row['link_id']}"
+        sig_keys = [f"traffic:sig:{r['link_id']}" for r in rows]
+        old_sigs = cache.mget(sig_keys)
+        changed, new_sigs = [], {}
+        for row, old in zip(rows, old_sigs):
             sig = _signature(row)
-            if cache.get(key) != sig:
-                cache.set(key, sig)
+            if old != sig:
                 changed.append(row)
+                new_sigs[f"traffic:sig:{row['link_id']}"] = sig
+        if new_sigs:
+            cache.mset(new_sigs)
         rows = changed
 
     stats = upsert_traffic_status(engine, rows)
 
-    if snapshot:
-        for row in rows:
-            cache.set(f"traffic:latest:{row['link_id']}", json.dumps(row))
+    if snapshot and rows:
+        cache.mset({f"traffic:latest:{row['link_id']}": json.dumps(row) for row in rows})
 
     logger.info("traffic: done %s (cached: snapshot=%s incremental=%s)", stats, snapshot, incremental)
     return stats
