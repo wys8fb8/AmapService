@@ -13,6 +13,7 @@ from amap_service.pipelines.road_network import run_road_network
 from amap_service.pipelines.transit import run_transit_stage1
 from amap_service.pipelines.transit_build import run_transit_build
 from amap_service.pipelines.traffic import run_traffic
+from amap_service.pipelines.section_build import run_section_build
 from amap_service.scheduler.runner import build_scheduler
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,8 @@ def cmd_run_once(config_path: str, job: str) -> dict:
         if job == "transit":
             return run_transit_stage1(engine, tc, config)
         return run_transit_build(engine, tc, config)
+    if job == "section-build":
+        return run_section_build(engine, config)
     raise SystemExit(f"unknown job: {job}")
 
 
@@ -87,7 +90,7 @@ def main(argv: Optional[list] = None) -> None:
         sp = sub.add_parser(name)
         sp.add_argument("-c", "--config", default="config/config.yaml")
     ro = sub.add_parser("run-once")
-    ro.add_argument("job", choices=["road-network", "traffic", "transit", "transit-build"])
+    ro.add_argument("job", choices=["road-network", "traffic", "transit", "transit-build", "section-build"])
     ro.add_argument("-c", "--config", default="config/config.yaml")
 
     args = parser.parse_args(argv)

@@ -92,3 +92,15 @@ def test_run_once_dispatches_transit(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "run_transit_stage1", fake_stage1)
     cli.main(["run-once", "transit", "-c", str(cfg_path)])
     assert seen == {"called": True, "has_client": True}
+
+
+def test_run_once_section_build_dispatches(tmp_path, monkeypatch):
+    cfg_path, _ = _write_config(tmp_path)
+    seen = {}
+    def fake_section_build(engine, config):
+        seen["called"] = True
+        seen["has_engine"] = engine is not None
+        return {"segments": 0}
+    monkeypatch.setattr(cli, "run_section_build", fake_section_build)
+    cli.main(["run-once", "section-build", "-c", str(cfg_path)])
+    assert seen == {"called": True, "has_engine": True}
