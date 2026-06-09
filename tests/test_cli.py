@@ -51,7 +51,8 @@ def test_run_once_dispatches_road_network(tmp_path, monkeypatch):
 def test_run_once_dispatches_traffic(tmp_path, monkeypatch):
     cfg_path, _ = _write_config(tmp_path)
     seen = {}
-    def fake_traffic(engine, client, endpoint, path, parse_mode, cache=None, snapshot=False, incremental=False):
+    def fake_traffic(engine, client, endpoint, path, parse_mode, cache=None, snapshot=False,
+                     incremental=False, **_):
         seen.update(path=path, has_cache=cache is not None)
         return {"inserted": 0}
     monkeypatch.setattr(cli, "run_traffic", fake_traffic)

@@ -30,6 +30,7 @@ def run_traffic(
     cache=None,
     snapshot: bool = False,
     incremental: bool = False,
+    traffic_ttl_seconds: int = 600,
 ) -> dict:
     url = endpoint.rstrip("/") + path
     logger.info("traffic: fetching %s (mode=%s)", url, parse_mode)
@@ -64,9 +65,10 @@ def run_traffic(
     # 仅在 DB 全部写入成功后才推进签名/快照，避免失败批次被误判为"未变"而漏写。
     if not stats["failed"]:
         if incremental and new_sigs:
-            cache.mset(new_sigs)
+            cache.mset(new_sigs, ttl=traffic_ttl_seconds)
         if snapshot and rows:
-            cache.mset({f"traffic:latest:{row['link_id']}": json.dumps(row) for row in rows})
+            cache.mset({f"traffic:latest:{row['link_id']}": json.dumps(row) for row in rows},
+                       ttl=traffic_ttl_seconds)
 
     logger.info("traffic: done %s (cached: snapshot=%s incremental=%s)", stats, snapshot, incremental)
     return stats

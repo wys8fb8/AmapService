@@ -119,3 +119,14 @@ def test_run_traffic_skips_cache_writes_when_db_failed(tmp_path, monkeypatch):
     # DB 失败 -> 签名与快照都不应写入（下次可重试）
     assert cache.get("traffic:sig:1") is None
     assert cache.get("traffic:latest:1") is None
+
+
+def test_traffic_cache_keys_get_ttl(tmp_path):
+    e = _engine(tmp_path)
+    r = fakeredis.FakeRedis()
+    cache = RedisCache(r)
+    run_traffic(e, _client(), "http://h", "/g5_server/map/api/traffic/status",
+                cache=cache, snapshot=True, incremental=True, traffic_ttl_seconds=600)
+    # latest 与 sig 都应带 TTL（接近 600s）
+    assert 0 < r.ttl("traffic:latest:1") <= 600
+    assert 0 < r.ttl("traffic:sig:1") <= 600

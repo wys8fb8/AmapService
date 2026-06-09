@@ -57,6 +57,7 @@ def cmd_run_once(config_path: str, job: str) -> dict:
         return run_traffic(
             engine, client, amap.endpoint, ts.path, ts.parse_mode,
             cache=cache, snapshot=uses.latest_traffic_snapshot, incremental=uses.incremental_detection,
+            traffic_ttl_seconds=config.redis.traffic_ttl_seconds,
         )
     if job in ("transit", "transit-build"):
         tc = TransitClient(

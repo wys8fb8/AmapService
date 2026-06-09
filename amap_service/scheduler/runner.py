@@ -30,6 +30,7 @@ def build_scheduler(config, engine, http_client, cache) -> BlockingScheduler:
             lambda: run_traffic(
                 engine, http_client, amap.endpoint, ts.path, ts.parse_mode,
                 cache=cache, snapshot=uses.latest_traffic_snapshot, incremental=uses.incremental_detection,
+                traffic_ttl_seconds=config.redis.traffic_ttl_seconds,
             ),
             CronTrigger.from_crontab(ts.cron),
             id="traffic_status", max_instances=1, coalesce=True,

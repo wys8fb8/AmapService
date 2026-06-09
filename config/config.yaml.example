@@ -70,6 +70,7 @@ redis:
   port: 6379
   db: 0
   password: null
+  traffic_ttl_seconds: 600          # traffic:latest/sig 过期时间（秒，默认10分钟；缺失自动回落DB）
   uses:
     latest_traffic_snapshot: true   # 最新路况快照
     incremental_detection: true     # 增量/变更检测（跳过未变 link）

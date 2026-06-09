@@ -114,6 +114,7 @@ class RedisConfig(BaseModel):
     db: int = 0
     password: Optional[str] = None
     uses: RedisUses = Field(default_factory=RedisUses)
+    traffic_ttl_seconds: int = 600  # traffic:latest/sig 的过期时间（秒，默认10分钟；缺失自动回落DB）
 
 
 class HttpConfig(BaseModel):
