@@ -137,6 +137,7 @@ class SdkConfig(BaseModel):
     against_window_m: float = 80.0    # ...且至少此米数（去/回程重叠时避免与对向腿误比）
     connect_gap_m: float = 8.0        # 相邻路段端点距超此值即视为有缺口，触发图上补链
     max_fill_links: int = 8           # 单个缺口最多补入的连接路段数（防绕远路）
+    section_sample_step_m: float = 4.0  # section-build 站点对齐采样步长（米）
 
 
 class LoggingConfig(BaseModel):
