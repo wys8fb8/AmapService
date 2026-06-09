@@ -19,3 +19,10 @@ def test_sqlite_engine_connects(tmp_path):
     engine = make_engine(cfg)
     with engine.connect() as conn:
         assert conn.execute(text("select 1")).scalar() == 1
+
+
+def test_sqlite_pragmas_applied(tmp_path):
+    e = make_engine(DatabaseConfig(type="sqlite", sqlite=SqliteConfig(path=str(tmp_path / "t.db"))))
+    with e.connect() as c:
+        assert c.execute(text("PRAGMA journal_mode")).scalar().lower() == "wal"
+        assert int(c.execute(text("PRAGMA synchronous")).scalar()) == 1   # NORMAL
