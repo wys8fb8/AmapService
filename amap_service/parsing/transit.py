@@ -114,6 +114,39 @@ def select_line_names(records: list, companys=None, lines=None, limit: int = 0) 
     return selected
 
 
+def parse_line_stations(raw) -> list:
+    """从 GetRoadLineEntity 响应，按方向产出站级静态数据。
+
+    形如 {"Data": {"LineName","NorCode","UpObject":{"UpDown":0,"Stations":[{LevelId,LevelName,
+    Lon02,Lat02},...]}, "DownObject":{...}|None}}。返回
+    [{line_name, nor_code, direction, stations:[{level_id, level_name, longitude, latitude}]}, ...]；
+    缺坐标的站点丢弃。方向号取自 UpDown，缺失则按槽位兜底（UpObject->0, DownObject->1）。"""
+    data = raw.get("Data") if isinstance(raw, dict) else None
+    if not isinstance(data, dict):
+        return []
+    line_name = str(data.get("LineName") or "")
+    nor_code = data.get("NorCode")
+    out = []
+    for obj, default_dir in ((data.get("UpObject"), 0), (data.get("DownObject"), 1)):
+        if not isinstance(obj, dict):
+            continue
+        direction = obj.get("UpDown")
+        if direction is None:
+            direction = default_dir
+        stations = []
+        for s in obj.get("Stations") or []:
+            if not isinstance(s, dict):
+                continue
+            lvl, lng, lat = s.get("LevelId"), s.get("Lon02"), s.get("Lat02")
+            if lvl is None or lng is None or lat is None:
+                continue
+            stations.append({"level_id": lvl, "level_name": s.get("LevelName"),
+                             "longitude": lng, "latitude": lat})
+        out.append({"line_name": line_name, "nor_code": nor_code,
+                    "direction": direction, "stations": stations})
+    return out
+
+
 def parse_line_tracks(raw) -> list:
     """From a GetRoadLineEntity response, yield one dict per directional track.
 
