@@ -36,3 +36,24 @@ def test_cron_trigger_applied():
     sched = build_scheduler(_config(), engine=object(), http_client=object(), cache=NoOpCache())
     job = sched.get_job("traffic_status")
     assert "minute='*/2'" in str(job.trigger)
+
+
+def test_traffic_job_gets_on_complete_when_provided(monkeypatch):
+    """build_scheduler 把 on_traffic_complete 透传给 run_traffic。"""
+    import amap_service.scheduler.runner as runner
+
+    captured = {}
+
+    def fake_run_traffic(*args, **kwargs):
+        captured["on_complete"] = kwargs.get("on_complete")
+        return {"written": 0, "failed": 0}
+
+    monkeypatch.setattr(runner, "run_traffic", fake_run_traffic)
+
+    cfg = _config()
+    sentinel = lambda rows: None
+    sched = runner.build_scheduler(cfg, engine=None, http_client=None, cache=None,
+                                   on_traffic_complete=sentinel)
+    job = next(j for j in sched.get_jobs() if j.id == "traffic_status")
+    job.func()
+    assert captured["on_complete"] is sentinel

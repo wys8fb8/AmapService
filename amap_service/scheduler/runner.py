@@ -10,8 +10,11 @@ from amap_service.pipelines.traffic import run_traffic
 logger = logging.getLogger(__name__)
 
 
-def build_scheduler(config, engine, http_client, cache) -> BlockingScheduler:
-    """Register an APScheduler job per enabled amap job. Returns an unstarted scheduler."""
+def build_scheduler(config, engine, http_client, cache, on_traffic_complete=None) -> BlockingScheduler:
+    """Register an APScheduler job per enabled amap job. Returns an unstarted scheduler.
+
+    on_traffic_complete: 可选回调,在每轮路况落地后收到全量 rows(供 MQTT 发布)。
+    """
     sched = BlockingScheduler()
     amap = config.amap
 
@@ -29,8 +32,10 @@ def build_scheduler(config, engine, http_client, cache) -> BlockingScheduler:
         sched.add_job(
             lambda: run_traffic(
                 engine, http_client, amap.endpoint, ts.path, ts.parse_mode,
-                cache=cache, snapshot=uses.latest_traffic_snapshot, incremental=uses.incremental_detection,
+                cache=cache, snapshot=uses.latest_traffic_snapshot,
+                incremental=uses.incremental_detection,
                 traffic_ttl_seconds=config.redis.traffic_ttl_seconds,
+                on_complete=on_traffic_complete,
             ),
             CronTrigger.from_crontab(ts.cron),
             id="traffic_status", max_instances=1, coalesce=True,
