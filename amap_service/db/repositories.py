@@ -7,6 +7,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from .schema import (
     road_link, road_link_coord, traffic_status, transit_line_raw, transit_segment,
+    transit_station, transit_section_link,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,3 +172,48 @@ def replace_transit_segments(engine: Engine, line_name: str, direction, nor_code
         if rows:
             conn.execute(transit_segment.insert(), rows)
     return len(rows)
+
+
+def replace_transit_stations(engine: Engine, line_name: str, direction, nor_code,
+                             stations: list) -> int:
+    """整体替换某线路某方向的站级静态数据（先删后插，单事务）。
+    stations: [{level_id, level_name, longitude, latitude}, ...]。返回写入条数。"""
+    with engine.begin() as conn:
+        conn.execute(
+            delete(transit_station).where(
+                (transit_station.c.line_name == line_name)
+                & (transit_station.c.direction == direction)
+            )
+        )
+        if not stations:
+            return 0
+        conn.execute(transit_station.insert(), [
+            {"line_name": line_name, "nor_code": nor_code, "direction": direction,
+             "level_id": s["level_id"], "level_name": s.get("level_name"),
+             "longitude": s["longitude"], "latitude": s["latitude"]}
+            for s in stations
+        ])
+        return len(stations)
+
+
+def replace_transit_section_links(engine: Engine, line_name: str, direction, nor_code,
+                                  rows: list) -> int:
+    """整体替换某线路某方向的站间路段占比（先删后插，单事务）。
+    rows: [{from_level_id, to_level_id, seq, link_id, length_m, pct}, ...]。返回写入条数。"""
+    with engine.begin() as conn:
+        conn.execute(
+            delete(transit_section_link).where(
+                (transit_section_link.c.line_name == line_name)
+                & (transit_section_link.c.direction == direction)
+            )
+        )
+        if not rows:
+            return 0
+        conn.execute(transit_section_link.insert(), [
+            {"line_name": line_name, "nor_code": nor_code, "direction": direction,
+             "from_level_id": r["from_level_id"], "to_level_id": r["to_level_id"],
+             "seq": r["seq"], "link_id": r["link_id"],
+             "length_m": r["length_m"], "pct": r["pct"]}
+            for r in rows
+        ])
+        return len(rows)
