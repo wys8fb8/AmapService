@@ -99,6 +99,20 @@ def cmd_run(config_path: str) -> None:
     sched.start()
 
 
+def cmd_match_report(config_path: str, output: Optional[str] = None) -> str:
+    """统计每条已匹配线路各方向的原始轨迹长度 vs 匹配后路段长度,输出 CSV 到 logs/。"""
+    from amap_service.reports.match_report import build_match_report, write_match_report_csv
+    config = load_config(config_path)
+    _configure_logging(config)
+    engine = make_engine(config.database)
+    rows = build_match_report(engine)
+    out = output or "logs/line_match_report.csv"
+    write_match_report_csv(rows, out)
+    logger.info("match-report: %d rows -> %s", len(rows), out)
+    print(f"match-report: wrote {len(rows)} rows to {out}")
+    return out
+
+
 def cmd_serve(config_path: str) -> None:
     config = load_config(config_path)
     _configure_logging(config)
@@ -119,6 +133,9 @@ def main(argv: Optional[list] = None) -> None:
     ro = sub.add_parser("run-once")
     ro.add_argument("job", choices=["road-network", "traffic", "transit", "transit-build", "section-build"])
     ro.add_argument("-c", "--config", default="config/config.yaml")
+    mr = sub.add_parser("match-report")
+    mr.add_argument("-c", "--config", default="config/config.yaml")
+    mr.add_argument("-o", "--output", default=None, help="CSV 输出路径(默认 logs/line_match_report.csv)")
 
     args = parser.parse_args(argv)
     if args.cmd == "initdb":
@@ -129,6 +146,8 @@ def main(argv: Optional[list] = None) -> None:
         cmd_run(args.config)
     elif args.cmd == "serve":
         cmd_serve(args.config)
+    elif args.cmd == "match-report":
+        cmd_match_report(args.config, args.output)
 
 
 if __name__ == "__main__":  # pragma: no cover
