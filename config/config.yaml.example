@@ -104,3 +104,30 @@ sdk:
 logging:
   level: INFO
   file: "./logs/amap_service.log"
+
+# ── HTTP API（需求3/4/5，独立进程 amap-service serve）──────
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  auth:
+    enabled: false            # 默认关；内网可不开
+    api_key: ""               # 建议用环境变量 AMAP__API__AUTH__API_KEY 覆盖
+    header: "X-API-Key"
+  static_cache_ttl_seconds: 300   # 静态结构进程内缓存校验间隔(秒)；0=每次校验版本
+
+# ── MQTT 发布（需求4/5，挂在 traffic 定时任务内）────────────
+mqtt:
+  enabled: false              # 启用才发布；不启用 traffic 任务行为不变
+  host: "127.0.0.1"
+  port: 1883
+  username: ""
+  password: ""
+  client_id: "amap-publisher"
+  topic_prefix: "amap"        # 主题前缀
+  qos: 0
+  retain: false
+  include_geometry: false     # 默认瘦 payload；true 则主题里带 line_track 坐标
+  publish_map: true           # 需求4 线路地图主题开关
+  publish_section: true       # 需求5 线路模拟图主题开关
+  connect_timeout_seconds: 5
