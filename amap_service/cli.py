@@ -68,6 +68,8 @@ def cmd_run_once(config_path: str, job: str) -> dict:
             timeout=config.http.timeout_seconds,
             cache=cache,
             token_cache_enabled=config.redis.uses.token_cache,
+            line_cache_enabled=config.redis.uses.transit_line_cache,
+            line_cache_expire_hour=config.transit.line_cache_expire_hour,
         )
         if job == "transit":
             return run_transit_stage1(engine, tc, config)

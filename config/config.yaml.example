@@ -49,6 +49,7 @@ transit:
   lines: ""                        # 指定线路号白名单，如 "47,192"；留空=不限（按 companys/limit）
   line_limit: 0                    # 处理条数上限；0=全量（探查时可设小值，如 5）
   token_ttl_seconds: 3600
+  line_cache_expire_hour: 1        # 线路 Redis 缓存失效整点（UTC+8，默认每天 01:00）
 
 # ── 数据库（需求1.4，默认 sqlite）─────────────────────
 database:
@@ -75,6 +76,7 @@ redis:
     latest_traffic_snapshot: true   # 最新路况快照
     incremental_detection: true     # 增量/变更检测（跳过未变 link）
     token_cache: true               # 公交 token 缓存
+    transit_line_cache: true        # 公交线路列表/对象缓存（当日命中，跨天 line_cache_expire_hour 点失效）
 
 # ── HTTP 行为 ─────────────────────────────────────
 http:

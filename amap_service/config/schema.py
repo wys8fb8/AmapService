@@ -63,6 +63,7 @@ class TransitConfig(BaseModel):
     lines: Optional[str] = None            # 逗号分隔；只处理这些指定线路号（留空=不限，配合 companys/limit）
     line_limit: int = 0                    # cap lines processed per run; 0 = all
     token_ttl_seconds: int = 3600
+    line_cache_expire_hour: int = 1        # 线路 Redis 缓存失效的整点小时（UTC+8，默认每天 01:00）
 
     def companys_set(self):
         return _split_csv(self.companys)
@@ -105,6 +106,7 @@ class RedisUses(BaseModel):
     latest_traffic_snapshot: bool = True
     incremental_detection: bool = True
     token_cache: bool = True
+    transit_line_cache: bool = True   # 公交线路列表/对象缓存（当日命中，跨天失效）
 
 
 class RedisConfig(BaseModel):

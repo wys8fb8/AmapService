@@ -1,8 +1,18 @@
+import datetime
+
 import httpx
 import fakeredis
 from amap_service.config.schema import TransitConfig
 from amap_service.cache.client import RedisCache
-from amap_service.clients.transit import build_signature, build_token_body, TransitClient
+from amap_service.clients.transit import (
+    build_signature, build_token_body, TransitClient, seconds_until_next_local_hour,
+)
+
+_TZ8 = datetime.timezone(datetime.timedelta(hours=8))
+
+
+def _ms(y, mo, d, h, mi=0, s=0):
+    return int(datetime.datetime(y, mo, d, h, mi, s, tzinfo=_TZ8).timestamp() * 1000)
 
 
 def _cfg(**kw):
@@ -113,3 +123,72 @@ def test_get_line_list_falls_back_to_username_when_loginname_absent():
     client.get_line_list("TOK")
     assert seen["loginname"] == "yangs"      # falls back to username when loginname is None
     client.close()
+
+
+# ── 公交线路 Redis 缓存（当日命中，跨天 01:00 失效）──────────────────────
+
+def test_seconds_until_next_local_hour():
+    assert seconds_until_next_local_hour(_ms(2026, 6, 9, 14), 1) == 39600   # 14:00 → 次日 01:00 = 11h
+    assert seconds_until_next_local_hour(_ms(2026, 6, 9, 0, 30), 1) == 1800  # 00:30 → 当日 01:00 = 30m
+
+
+def _line_client(handler, cache, **kw):
+    base = dict(transport=httpx.MockTransport(handler), now_ms=lambda: _ms(2026, 6, 9, 14),
+                cache=cache, line_cache_enabled=True, line_cache_expire_hour=1)
+    base.update(kw)
+    return TransitClient(_cfg(), **base)
+
+
+def test_get_line_entity_redis_cached_second_client_no_request():
+    cache = RedisCache(fakeredis.FakeRedis())
+    calls = {"n": 0}
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(200, text='{"entity": 1}')
+    assert _line_client(handler, cache).get_line_entity("TOK", "47") == '{"entity": 1}'
+    assert _line_client(handler, cache).get_line_entity("TOK", "47") == '{"entity": 1}'
+    assert calls["n"] == 1  # 第二次命中缓存，不发请求
+
+
+def test_get_line_list_redis_cached():
+    cache = RedisCache(fakeredis.FakeRedis())
+    calls = {"n": 0}
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(200, text='{"Data": []}')
+    _line_client(handler, cache).get_line_list("TOK")
+    _line_client(handler, cache).get_line_list("TOK")
+    assert calls["n"] == 1
+
+
+def test_line_cache_skips_error_responses():
+    cache = RedisCache(fakeredis.FakeRedis())
+    calls = {"n": 0}
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(500, text="boom")
+    assert _line_client(handler, cache).get_line_entity("TOK", "47") == "boom"
+    assert _line_client(handler, cache).get_line_entity("TOK", "47") == "boom"
+    assert calls["n"] == 2  # 500 不缓存 → 仍重新请求
+
+
+def test_line_cache_disabled_always_requests():
+    cache = RedisCache(fakeredis.FakeRedis())
+    calls = {"n": 0}
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(200, text="{}")
+    _line_client(handler, cache, line_cache_enabled=False).get_line_entity("TOK", "47")
+    _line_client(handler, cache, line_cache_enabled=False).get_line_entity("TOK", "47")
+    assert calls["n"] == 2
+
+
+def test_line_cache_sets_ttl_until_next_expire_hour():
+    fr = fakeredis.FakeRedis()
+    def handler(request):
+        return httpx.Response(200, text="{}")
+    c = _line_client(handler, RedisCache(fr))
+    c.get_line_entity("TOK", "47")
+    ttl = fr.ttl("transit:line_entity:47")
+    assert 39590 <= ttl <= 39600  # ~11h 到次日 01:00
+    c.close()

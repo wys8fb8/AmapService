@@ -27,6 +27,14 @@ def test_defaults_applied():
     assert cfg.sdk.match_tolerance_m == 30
     assert cfg.amap.auth.type == "none"
 
+def test_transit_line_cache_config_defaults():
+    from amap_service.config.schema import RedisUses, TransitConfig
+    assert RedisUses().transit_line_cache is True
+    tc = TransitConfig(username="u", password="p", token_url="a",
+                       line_list_url="b", line_entity_url="c")
+    assert tc.line_cache_expire_hour == 1
+
+
 def test_invalid_cron_rejected():
     data = _minimal()
     data["amap"]["jobs"]["road_network"]["cron"] = "not a cron"
