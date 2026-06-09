@@ -91,3 +91,35 @@ def test_transit_stage1_fields_defaults_and_override():
     assert cfg2.transit.token_path == "data.token"
     assert cfg2.transit.line_name_path == "data"
     assert cfg2.transit.token_ttl_seconds == 120
+
+
+def test_api_mqtt_defaults():
+    from amap_service.config.schema import AppConfig
+    cfg = AppConfig.model_validate({
+        "amap": {"endpoint": "http://x", "jobs": {
+            "road_network": {"path": "/r", "cron": "0 1 * * *"},
+            "traffic_status": {"path": "/t", "cron": "*/2 * * * *"}}},
+        "transit": {"username": "u", "password": "p",
+                    "token_url": "http://a", "line_list_url": "http://b",
+                    "line_entity_url": "http://c"},
+    })
+    assert cfg.api.enabled is False
+    assert cfg.api.port == 8080
+    assert cfg.api.auth.enabled is False
+    assert cfg.api.auth.header == "X-API-Key"
+    assert cfg.api.static_cache_ttl_seconds == 300
+    assert cfg.mqtt.enabled is False
+    assert cfg.mqtt.topic_prefix == "amap"
+    assert cfg.mqtt.qos == 0
+    assert cfg.mqtt.retain is False
+    assert cfg.mqtt.include_geometry is False
+    assert cfg.mqtt.publish_map is True
+    assert cfg.mqtt.publish_section is True
+
+
+def test_mqtt_qos_range_validated():
+    import pytest
+    from pydantic import ValidationError
+    from amap_service.config.schema import MqttConfig
+    with pytest.raises(ValidationError):
+        MqttConfig(qos=3)

@@ -146,6 +146,36 @@ class LoggingConfig(BaseModel):
     file: Optional[str] = None
 
 
+class ApiAuthConfig(BaseModel):
+    enabled: bool = False
+    api_key: str = ""
+    header: str = "X-API-Key"
+
+
+class ApiConfig(BaseModel):
+    enabled: bool = False
+    host: str = "0.0.0.0"
+    port: int = 8080
+    auth: ApiAuthConfig = Field(default_factory=ApiAuthConfig)
+    static_cache_ttl_seconds: int = 300  # 静态结构进程内缓存校验间隔(秒)；0=每次校验版本
+
+
+class MqttConfig(BaseModel):
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 1883
+    username: str = ""
+    password: str = ""
+    client_id: str = "amap-publisher"
+    topic_prefix: str = "amap"
+    qos: int = Field(default=0, ge=0, le=2)
+    retain: bool = False
+    include_geometry: bool = False
+    publish_map: bool = True       # 需求4 线路地图主题
+    publish_section: bool = True   # 需求5 线路模拟图主题
+    connect_timeout_seconds: int = 5
+
+
 class AppConfig(BaseModel):
     amap: AmapConfig
     transit: TransitConfig
@@ -154,3 +184,5 @@ class AppConfig(BaseModel):
     http: HttpConfig = Field(default_factory=HttpConfig)
     sdk: SdkConfig = Field(default_factory=SdkConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    api: ApiConfig = Field(default_factory=ApiConfig)
+    mqtt: MqttConfig = Field(default_factory=MqttConfig)
