@@ -95,43 +95,43 @@ def _upsert_one_link(conn: Connection, link: dict) -> None:
         )
 
 
-def upsert_traffic_status(engine: Engine, rows: Iterable[dict], batch_size: int = 2000) -> dict:
-    """Upsert traffic_status by link_id (latest-only), refreshing updated_at."""
-    stats = {"inserted": 0, "updated": 0, "skipped": 0, "failed": 0}
+def _traffic_bulk_upsert(conn):
+    """方言相关的批量 upsert 语句（不带 values，配 executemany 参数列表）。
+    更新列取自新值；updated_at 用 DB 端 current_timestamp()。"""
+    cols = ["speed", "state", "travel_time", "traffic_time"]
+    name = conn.dialect.name
+    if name == "sqlite":
+        stmt = sqlite_insert(traffic_status)
+        set_ = {c: getattr(stmt.excluded, c) for c in cols}
+        set_["updated_at"] = func.current_timestamp()
+        return stmt.on_conflict_do_update(index_elements=["link_id"], set_=set_)
+    if name == "mysql":
+        stmt = mysql_insert(traffic_status)
+        set_ = {c: getattr(stmt.inserted, c) for c in cols}
+        set_["updated_at"] = func.current_timestamp()
+        return stmt.on_duplicate_key_update(**set_)
+    raise ValueError(f"unsupported dialect for upsert: {name}")
+
+
+def upsert_traffic_status(engine: Engine, rows: Iterable[dict], batch_size: int = 5000) -> dict:
+    """批量 upsert traffic_status（按 link_id，latest-only），刷新 updated_at。
+
+    双方言 executemany：每批一条 INSERT...ON CONFLICT/DUPLICATE UPDATE，配参数列表。
+    返回 {written, failed}（latest-only 不区分 inserted/updated）。"""
+    stats = {"written": 0, "failed": 0}
     for batch in _batched(rows, batch_size):
-        ids = [r["link_id"] for r in batch]
+        params = [{"link_id": r["link_id"], "speed": r.get("speed"), "state": r.get("state"),
+                   "travel_time": r.get("travel_time"), "traffic_time": r.get("traffic_time")}
+                  for r in batch]
+        if not params:
+            continue
         try:
             with engine.begin() as conn:
-                existing = set(
-                    conn.execute(
-                        select(traffic_status.c.link_id).where(traffic_status.c.link_id.in_(ids))
-                    ).scalars().all()
-                )
-                for row in batch:
-                    stmt = _upsert_stmt(
-                        conn, traffic_status,
-                        values={
-                            "link_id": row["link_id"],
-                            "speed": row.get("speed"),
-                            "state": row.get("state"),
-                            "travel_time": row.get("travel_time"),
-                            "traffic_time": row.get("traffic_time"),
-                            "updated_at": func.current_timestamp(),
-                        },
-                        index_col=traffic_status.c.link_id,
-                        update_cols=["speed", "state", "travel_time", "traffic_time", "updated_at"],
-                    )
-                    conn.execute(stmt)
-                unique_ids = set(ids)
-                inserted = len(unique_ids - existing)
-                updated = len(unique_ids) - inserted
-                skipped = len(batch) - len(unique_ids)
-            stats["inserted"] += inserted
-            stats["updated"] += updated
-            stats["skipped"] += skipped
-        except Exception:
+                conn.execute(_traffic_bulk_upsert(conn), params)
+            stats["written"] += len(params)
+        except Exception:  # noqa: BLE001
             stats["failed"] += len(batch)
-            logger.exception("traffic_status batch failed (%d rows)", len(batch))
+            logger.exception("traffic_status bulk batch failed (%d rows)", len(batch))
     return stats
 
 

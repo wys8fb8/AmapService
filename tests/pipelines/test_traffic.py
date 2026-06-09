@@ -35,7 +35,7 @@ def test_run_traffic_both_modes(tmp_path, mode):
     client = HttpClient(backoff_seconds=0, transport=httpx.MockTransport(handler))
     stats = run_traffic(e, client, "http://192.168.102.102:8080/",
                         "/g5_server/map/api/traffic/status", parse_mode=mode)
-    assert stats["inserted"] == 2 and stats["failed"] == 0
+    assert stats["written"] == 2 and stats["failed"] == 0
     with e.connect() as c:
         assert c.execute(select(func.count()).select_from(traffic_status)).scalar() == 2
         agg = c.execute(

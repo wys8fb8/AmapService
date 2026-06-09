@@ -31,9 +31,9 @@ def test_incremental_skips_unchanged_on_second_run(tmp_path):
     e = _engine(tmp_path)
     cache = RedisCache(fakeredis.FakeRedis())
     s1 = run_traffic(e, _client(), "http://h", "/p", cache=cache, incremental=True)
-    assert s1["inserted"] == 2
+    assert s1["written"] == 2
     s2 = run_traffic(e, _client(), "http://h", "/p", cache=cache, incremental=True)
-    assert s2["inserted"] == 0 and s2["updated"] == 0
+    assert s2["written"] == 0 and s2["failed"] == 0
     with e.connect() as c:
         assert c.execute(select(func.count()).select_from(traffic_status)).scalar() == 2
 
@@ -50,4 +50,4 @@ def test_snapshot_written_to_cache(tmp_path):
 def test_no_cache_path_unchanged(tmp_path):
     e = _engine(tmp_path)
     s = run_traffic(e, _client(), "http://h", "/p")
-    assert s["inserted"] == 2
+    assert s["written"] == 2
