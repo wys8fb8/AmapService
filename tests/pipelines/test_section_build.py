@@ -34,6 +34,7 @@ def test_section_build_end_to_end(tmp_path):
     ])
     stats = run_section_build(e, _Cfg())
     assert stats["directions"] == 1 and stats["sections"] >= 1
+    assert stats["lines"] == 1
     with e.connect() as c:
         rows = c.execute(
             select(transit_section_link.c.to_level_id, transit_section_link.c.link_id,
@@ -54,3 +55,4 @@ def test_section_build_skips_direction_without_stations(tmp_path):
         cnt = c.execute(select(transit_section_link.c.id)).all()
     assert cnt == []
     assert stats["sections"] == 0
+    assert stats["directions"] == 0 and stats["lines"] == 0

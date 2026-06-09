@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def run_section_build(engine: Engine, config) -> dict:
     step = config.sdk.section_sample_step_m
-    stats = {"lines": 0, "directions": 0, "sections": 0}
+    stats = {"lines": 0, "directions": 0, "sections": 0, "skipped_directions": 0}
 
     with engine.connect() as conn:
         pairs = conn.execute(
@@ -25,16 +25,20 @@ def run_section_build(engine: Engine, config) -> dict:
         ).all()
     seen_lines = set()
     for line_name, direction, nor_code in pairs:
-        segments = _load_segments(engine, line_name, direction)
-        stations = _load_stations(engine, line_name, direction)
-        chain = build_chain(segments)
-        rows = compute_section_rows(chain, stations, step)
-        written = replace_transit_section_links(engine, line_name, direction, nor_code, rows)
-        if written:
-            stats["directions"] += 1
-            stats["sections"] += written
-            seen_lines.add(line_name)
-        logger.info("section build: %s dir %s -> %d rows", line_name, direction, written)
+        try:
+            segments = _load_segments(engine, line_name, direction)
+            stations = _load_stations(engine, line_name, direction)
+            chain = build_chain(segments)
+            rows = compute_section_rows(chain, stations, step)
+            written = replace_transit_section_links(engine, line_name, direction, nor_code, rows)
+            if written:
+                stats["directions"] += 1
+                stats["sections"] += written
+                seen_lines.add(line_name)
+            logger.info("section build: %s dir %s -> %d rows", line_name, direction, written)
+        except Exception:  # noqa: BLE001 - one bad line/direction must not abort the whole build
+            logger.exception("section build: line '%s' dir %s failed; skipping", line_name, direction)
+            stats["skipped_directions"] += 1
     stats["lines"] = len(seen_lines)
     logger.info("section build: done %s", stats)
     return stats
