@@ -47,23 +47,26 @@ def run_traffic(
         return stats
 
     rows = list(rows)  # cache path needs multiple passes
+    new_sigs = {}
     if incremental:
         sig_keys = [f"traffic:sig:{r['link_id']}" for r in rows]
         old_sigs = cache.mget(sig_keys)
-        changed, new_sigs = [], {}
+        changed = []
         for row, old in zip(rows, old_sigs):
             sig = _signature(row)
             if old != sig:
                 changed.append(row)
                 new_sigs[f"traffic:sig:{row['link_id']}"] = sig
-        if new_sigs:
-            cache.mset(new_sigs)
         rows = changed
 
     stats = upsert_traffic_status(engine, rows)
 
-    if snapshot and rows:
-        cache.mset({f"traffic:latest:{row['link_id']}": json.dumps(row) for row in rows})
+    # 仅在 DB 全部写入成功后才推进签名/快照，避免失败批次被误判为"未变"而漏写。
+    if not stats["failed"]:
+        if incremental and new_sigs:
+            cache.mset(new_sigs)
+        if snapshot and rows:
+            cache.mset({f"traffic:latest:{row['link_id']}": json.dumps(row) for row in rows})
 
     logger.info("traffic: done %s (cached: snapshot=%s incremental=%s)", stats, snapshot, incremental)
     return stats

@@ -97,3 +97,25 @@ def test_run_traffic_incremental_detects_change(tmp_path):
     with e.connect() as c:
         assert tuple(c.execute(select(traffic_status.c.speed, traffic_status.c.state)
                                .where(traffic_status.c.link_id == 1)).one()) == (20, 3)
+
+
+def test_run_traffic_skips_cache_writes_when_db_failed(tmp_path, monkeypatch):
+    import fakeredis, httpx
+    from amap_service.cache.client import RedisCache
+    from amap_service.clients.base import HttpClient
+    import amap_service.pipelines.traffic as traffic_mod
+    e = _engine(tmp_path)
+    cache = RedisCache(fakeredis.FakeRedis())
+    # 强制 DB 写入"失败"（全部计为 failed，不抛）
+    monkeypatch.setattr(traffic_mod, "upsert_traffic_status",
+                        lambda engine, rows: {"written": 0, "failed": len(list(rows))})
+    payload = {"linkStates": [{"linkId": 1, "speed": 80, "state": 1, "travelTime": 10}]}
+    c = HttpClient(backoff_seconds=0,
+                   transport=httpx.MockTransport(lambda req: httpx.Response(200, json=payload)))
+    s = run_traffic(e, c, "http://h", "/g5_server/map/api/traffic/status",
+                    cache=cache, incremental=True, snapshot=True)
+    c.close()
+    assert s["failed"] == 1
+    # DB 失败 -> 签名与快照都不应写入（下次可重试）
+    assert cache.get("traffic:sig:1") is None
+    assert cache.get("traffic:latest:1") is None
