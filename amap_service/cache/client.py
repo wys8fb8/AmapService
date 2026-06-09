@@ -13,6 +13,12 @@ class NoOpCache:
     def set(self, key: str, value: str, ttl: Optional[int] = None) -> None:
         pass
 
+    def mget(self, keys: list) -> list:
+        return [None] * len(keys)
+
+    def mset(self, mapping: dict, ttl: Optional[int] = None) -> None:
+        pass
+
 
 class RedisCache:
     enabled = True
@@ -31,6 +37,23 @@ class RedisCache:
             self._r.setex(key, ttl, value)
         else:
             self._r.set(key, value)
+
+    def mget(self, keys: list) -> list:
+        if not keys:
+            return []
+        vals = self._r.mget(keys)
+        return [v.decode() if isinstance(v, (bytes, bytearray)) else v for v in vals]
+
+    def mset(self, mapping: dict, ttl: Optional[int] = None) -> None:
+        if not mapping:
+            return
+        if ttl:
+            pipe = self._r.pipeline()
+            for k, v in mapping.items():
+                pipe.setex(k, ttl, v)
+            pipe.execute()
+        else:
+            self._r.mset(mapping)
 
 
 def _redis_client_from_config(cfg: RedisConfig):

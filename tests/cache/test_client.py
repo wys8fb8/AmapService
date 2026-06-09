@@ -39,3 +39,31 @@ def test_make_cache_enabled_returns_redis(monkeypatch):
     assert isinstance(cache, RedisCache)
     cache.set("k", "v")
     assert cache.get("k") == "v"
+
+
+def test_redis_cache_mset_mget_roundtrip():
+    c = RedisCache(fakeredis.FakeRedis())
+    c.mset({"a": "1", "b": "2"})
+    assert c.mget(["a", "b", "missing"]) == ["1", "2", None]
+    assert c.mget([]) == []
+
+
+def test_redis_cache_mset_empty_noop():
+    c = RedisCache(fakeredis.FakeRedis())
+    c.mset({})            # 不报错
+    assert c.mget(["x"]) == [None]
+
+
+def test_redis_cache_mset_ttl():
+    r = fakeredis.FakeRedis()
+    c = RedisCache(r)
+    c.mset({"k": "v"}, ttl=100)
+    assert c.get("k") == "v"
+    assert r.ttl("k") > 0
+
+
+def test_noop_cache_batch_inert():
+    c = NoOpCache()
+    assert c.mget(["a", "b"]) == [None, None]
+    c.mset({"a": "1"})    # 不报错
+    assert c.mget(["a"]) == [None]
