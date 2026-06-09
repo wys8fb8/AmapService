@@ -55,10 +55,14 @@ class StaticLineCache:
         self._version = version
 
     def _probe_version(self):
+        # 版本 = (行数, 最大时间戳)。带行数才能检出"同一秒内"或不推进 max 的增删
+        # (created_at/built_at 仅秒级精度;只比 max 时间戳会漏掉同秒重建与删除)。
         with self.engine.connect() as conn:
+            seg_n = conn.execute(select(func.count()).select_from(transit_segment)).scalar()
             seg_v = conn.execute(select(func.max(transit_segment.c.created_at))).scalar()
+            sec_n = conn.execute(select(func.count()).select_from(transit_section_link)).scalar()
             sec_v = conn.execute(select(func.max(transit_section_link.c.built_at))).scalar()
-        return (str(seg_v), str(sec_v))
+        return (seg_n, str(seg_v), sec_n, str(sec_v))
 
     def _reload(self) -> None:
         with self.engine.connect() as conn:
