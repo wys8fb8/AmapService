@@ -70,3 +70,37 @@ transit_segment = Table(
     Index("idx_transit_segment_line", "line_name"),
     Index("idx_transit_segment_link", "link_id"),
 )
+
+# v2 站间路况分段：站级静态数据（由 transit-build 从线路实体落地）。
+transit_station = Table(
+    "transit_station", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("line_name", Text, nullable=False),
+    Column("nor_code", Text),
+    Column("direction", Integer, nullable=False),     # 0=上行/单环, 1=下行
+    Column("level_id", Integer, nullable=False),       # 站级号
+    Column("level_name", Text),                        # 站名
+    Column("longitude", Float, nullable=False),        # Lon02
+    Column("latitude", Float, nullable=False),         # Lat02
+    Column("created_at", TIMESTAMP, server_default=func.current_timestamp()),
+    UniqueConstraint("line_name", "direction", "level_id", name="idx_transit_station_uniq"),
+    Index("idx_transit_station_line", "line_name", "direction"),
+)
+
+# v2 站间路况分段：相邻两站之间各路段的长度占比（静态，由 section-build 计算；不含路况）。
+transit_section_link = Table(
+    "transit_section_link", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("line_name", Text, nullable=False),
+    Column("nor_code", Text),
+    Column("direction", Integer, nullable=False),
+    Column("from_level_id", Integer, nullable=False),  # 区间起点站级
+    Column("to_level_id", Integer, nullable=False),    # 区间终点站级（方法一入参）
+    Column("seq", Integer, nullable=False),            # link 在区间内的顺序（0 起）
+    Column("link_id", BigInteger, nullable=False),     # 路段 ID（64 位）
+    Column("length_m", Float, nullable=False),         # 区间内该 link 的长度（米，事实源）
+    Column("pct", Integer, nullable=False),            # 预计算占比（区间内和=100）
+    Column("built_at", TIMESTAMP, server_default=func.current_timestamp()),
+    UniqueConstraint("line_name", "direction", "to_level_id", "seq", name="idx_transit_section_link_uniq"),
+    Index("idx_transit_section_link_line", "line_name", "direction"),
+)
