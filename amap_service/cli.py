@@ -89,7 +89,11 @@ def cmd_run(config_path: str) -> None:
     if config.mqtt.enabled:
         mqtt_client = make_mqtt_client(config.mqtt)
         mqtt_client.connect()
-        publisher = MqttPublisher(mqtt_client, StaticLineCache(engine), config.mqtt)
+        publisher = MqttPublisher(
+            mqtt_client,
+            StaticLineCache(engine, ttl_seconds=config.mqtt.static_cache_ttl_seconds),
+            config.mqtt,
+        )
         on_traffic_complete = publisher.publish_all
         logger.info("mqtt publisher enabled (prefix=%s)", config.mqtt.topic_prefix)
 

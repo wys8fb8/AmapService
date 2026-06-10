@@ -176,6 +176,9 @@ class MqttConfig(BaseModel):
     publish_map: bool = True       # 需求4 线路地图主题
     publish_section: bool = True   # 需求5 线路模拟图主题
     connect_timeout_seconds: int = 5
+    # 静态结构进程内缓存校验间隔(秒)。结构仅 transit-build/section-build 后变(天级),
+    # 故默认 600,避免每轮发布都重跑昂贵的版本探针;0=每轮都校验。
+    static_cache_ttl_seconds: int = 600
 
 
 class AppConfig(BaseModel):

@@ -71,6 +71,27 @@ def test_unknown_line_empty(tmp_path):
     assert cache.sections("999") == {}
 
 
+def test_link_tracks_chunked_beyond_in_limit(tmp_path, monkeypatch):
+    # 回归:link_id 数量超过单条 IN(...) 的拆批阈值时,_reload 必须分批查询,
+    # 不能把全部 id 塞进一条 IN 而触发 "too many SQL variables"。
+    import amap_service.views.static_cache as sc
+    monkeypatch.setattr(sc, "_IN_CHUNK", 100)
+    n = 250  # > 2*_IN_CHUNK,确保至少 3 批
+    base = 5130091959790075998
+    eng = _engine(tmp_path)
+    with eng.begin() as c:
+        c.execute(insert(road_link), [
+            {"link_id": base + i, "line_track": f"121.{i},31.{i}"} for i in range(n)])
+        c.execute(insert(transit_section_link), [
+            {"line_name": "47", "direction": 0, "from_level_id": i, "to_level_id": i + 1,
+             "seq": i, "link_id": base + i, "length_m": 1.0, "pct": 100} for i in range(n)])
+    cache = sc.StaticLineCache(eng)
+    assert len(cache.sections("47")[0]) == n
+    # 每个 link 的 line_track 都被分批查回,无遗漏。
+    for i in range(n):
+        assert cache.link_track(base + i) == f"121.{i},31.{i}"
+
+
 def test_reload_on_version_change(tmp_path):
     eng = _engine(tmp_path)
     _seed(eng)

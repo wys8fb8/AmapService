@@ -123,6 +123,7 @@ def test_api_mqtt_defaults():
     assert cfg.mqtt.include_geometry is False
     assert cfg.mqtt.publish_map is True
     assert cfg.mqtt.publish_section is True
+    assert cfg.mqtt.static_cache_ttl_seconds == 600
 
 
 def test_mqtt_qos_range_validated():

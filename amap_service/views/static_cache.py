@@ -13,6 +13,9 @@ from amap_service.db.schema import (
     road_link, transit_segment, transit_section_link, transit_station,
 )
 
+# 单条 IN(...) 的最大绑定参数数:保守取 2000,远低于 SQLite 32766 上限,MySQL 亦安全。
+_IN_CHUNK = 2000
+
 
 class StaticLineCache:
     def __init__(self, engine: Engine, ttl_seconds: int = 0):
@@ -100,16 +103,20 @@ class StaticLineCache:
             dir_secs[-1]["links"].append(
                 {"link_id": r.link_id, "length_m": r.length_m, "pct": r.pct})
 
-        link_ids = {lk["link_id"] for line in sections.values()
-                    for dirsecs in line.values() for sec in dirsecs for lk in sec["links"]}
+        link_ids = list({lk["link_id"] for line in sections.values()
+                         for dirsecs in line.values() for sec in dirsecs for lk in sec["links"]})
         link_tracks = {}
         if link_ids:
+            # 分批 IN 查询: link_ids 可达数万,单条 IN(...) 会超出 SQLite 的
+            # SQLITE_MAX_VARIABLE_NUMBER(默认 32766)并触发 OperationalError。
             with self.engine.connect() as conn:
-                for r in conn.execute(
-                    select(road_link.c.link_id, road_link.c.line_track)
-                    .where(road_link.c.link_id.in_(link_ids))
-                ).all():
-                    link_tracks[r.link_id] = r.line_track
+                for i in range(0, len(link_ids), _IN_CHUNK):
+                    chunk = link_ids[i:i + _IN_CHUNK]
+                    for r in conn.execute(
+                        select(road_link.c.link_id, road_link.c.line_track)
+                        .where(road_link.c.link_id.in_(chunk))
+                    ).all():
+                        link_tracks[r.link_id] = r.line_track
 
         stations = {(r.line_name, r.direction): r.n for r in station_rows}
         names = set(segments) | set(sections)
