@@ -120,3 +120,30 @@ def test_write_xlsx_conditional_fills(tmp_path):
     # 值与留空
     assert ws.cell(row=2, column=1).value == "A"
     assert ws.cell(row=5, column=3).value in ("", None)  # D 原始留空
+
+
+def test_write_match_report_db_replaces(tmp_path):
+    from sqlalchemy import func, select
+    from amap_service.db.schema import transit_match_report
+    from amap_service.reports.match_report import write_match_report_db
+    eng = _eng(tmp_path)  # init_db 已建 transit_match_report 表
+    write_match_report_db(eng, [
+        {"line_name": "47", "direction": 0, "direction_label": "上行",
+         "original_len_m": 100.0, "matched_len_m": 110.0, "diff_pct": 10.0},
+        {"line_name": "99", "direction": 1, "direction_label": "下行",
+         "original_len_m": None, "matched_len_m": 50.0, "diff_pct": None}])
+    with eng.connect() as c:
+        got = c.execute(
+            select(transit_match_report.c.line_name, transit_match_report.c.direction,
+                   transit_match_report.c.original_length_m, transit_match_report.c.matched_length_m,
+                   transit_match_report.c.diff_pct).order_by(transit_match_report.c.line_name)
+        ).all()
+    assert [tuple(r) for r in got] == [("47", 0, 100.0, 110.0, 10.0), ("99", 1, None, 50.0, None)]
+
+    # 整体替换：第二次跑只剩新数据
+    write_match_report_db(eng, [
+        {"line_name": "47", "direction": 0, "direction_label": "上行",
+         "original_len_m": 1.0, "matched_len_m": 2.0, "diff_pct": 100.0}])
+    with eng.connect() as c:
+        cnt = c.execute(select(func.count()).select_from(transit_match_report)).scalar()
+    assert cnt == 1

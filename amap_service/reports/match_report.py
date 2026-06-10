@@ -140,3 +140,22 @@ def write_match_report_xlsx(rows: list[dict], path: str) -> None:
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.freeze_panes = "A2"  # 冻结表头
     wb.save(path)
+
+
+def write_match_report_db(engine: Engine, rows: list[dict]) -> None:
+    """整体替换 transit_match_report 表为本次报表(先删后插,单事务),便于 SQL 查询。
+
+    例：SELECT * FROM transit_match_report WHERE diff_pct IS NOT NULL
+        AND ABS(diff_pct) > 10 ORDER BY ABS(diff_pct) DESC;
+    """
+    from sqlalchemy import delete
+
+    from amap_service.db.schema import transit_match_report
+    with engine.begin() as conn:
+        conn.execute(delete(transit_match_report))
+        if rows:
+            conn.execute(transit_match_report.insert(), [
+                {"line_name": r["line_name"], "direction": r["direction"],
+                 "original_length_m": r["original_len_m"], "matched_length_m": r["matched_len_m"],
+                 "diff_pct": r["diff_pct"]}
+                for r in rows])

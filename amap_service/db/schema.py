@@ -104,3 +104,17 @@ transit_section_link = Table(
     UniqueConstraint("line_name", "direction", "to_level_id", "seq", name="idx_transit_section_link_uniq"),
     Index("idx_transit_section_link_line", "line_name", "direction"),
 )
+
+# match-report 落库：每条已匹配线路各方向「原始轨迹 vs 匹配后路段」长度对比快照（每次跑整体替换）。
+transit_match_report = Table(
+    "transit_match_report", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("line_name", Text, nullable=False),
+    Column("direction", Integer, nullable=False),          # 0=上行/单环, 1=下行
+    Column("original_length_m", Float),                    # 原始 GPS 轨迹总长（米）；缺失为 NULL
+    Column("matched_length_m", Float, nullable=False),     # 匹配后路段总长（米）
+    Column("diff_pct", Float),                             # (匹配后-原始)/原始*100；缺失为 NULL
+    Column("computed_at", TIMESTAMP, server_default=func.current_timestamp()),
+    UniqueConstraint("line_name", "direction", name="idx_transit_match_report_uniq"),
+    Index("idx_transit_match_report_diff", "diff_pct"),
+)

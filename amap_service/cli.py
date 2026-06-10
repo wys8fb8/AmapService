@@ -99,26 +99,38 @@ def cmd_run(config_path: str) -> None:
     sched.start()
 
 
-def cmd_match_report(config_path: str, output: Optional[str] = None) -> str:
-    """统计每条已匹配线路各方向的原始轨迹长度 vs 匹配后路段长度,输出到 logs/。
+def cmd_match_report(config_path: str, output: Optional[str] = None, to_db: bool = False) -> dict:
+    """统计每条已匹配线路各方向的原始轨迹长度 vs 匹配后路段长度。
 
-    默认 .xlsx(差异 >10% 标红、5%~10% 标黄);-o 以 .csv 结尾则输出 CSV(无标色)。
+    输出去向:
+    - 文件：默认 logs/line_match_report.xlsx(差异 >10% 标红、5%~10% 标黄);
+      -o 以 .csv 结尾则输出 CSV(无标色)。
+    - 数据库：--db 写入 transit_match_report 表(整体替换),便于 SQL 查询。
+    若只给 --db 而不给 -o,则只写库、不写文件。
     """
     from amap_service.reports.match_report import (
-        build_match_report, write_match_report_csv, write_match_report_xlsx,
+        build_match_report, write_match_report_csv, write_match_report_db, write_match_report_xlsx,
     )
     config = load_config(config_path)
     _configure_logging(config)
     engine = make_engine(config.database)
     rows = build_match_report(engine)
-    out = output or "logs/line_match_report.xlsx"
-    if out.lower().endswith(".csv"):
-        write_match_report_csv(rows, out)
-    else:
-        write_match_report_xlsx(rows, out)
-    logger.info("match-report: %d rows -> %s", len(rows), out)
-    print(f"match-report: wrote {len(rows)} rows to {out}")
-    return out
+
+    # 只给 --db 时不写文件;否则写文件(默认 xlsx,.csv 结尾则 CSV)。
+    file_out = output if output else (None if to_db else "logs/line_match_report.xlsx")
+    if file_out:
+        if file_out.lower().endswith(".csv"):
+            write_match_report_csv(rows, file_out)
+        else:
+            write_match_report_xlsx(rows, file_out)
+        logger.info("match-report: %d rows -> %s", len(rows), file_out)
+        print(f"match-report: wrote {len(rows)} rows to {file_out}")
+    if to_db:
+        init_db(engine)  # 确保 transit_match_report 表存在
+        write_match_report_db(engine, rows)
+        logger.info("match-report: %d rows -> table transit_match_report", len(rows))
+        print(f"match-report: wrote {len(rows)} rows to table transit_match_report")
+    return {"rows": len(rows), "file": file_out, "db": to_db}
 
 
 def cmd_serve(config_path: str) -> None:
@@ -143,7 +155,10 @@ def main(argv: Optional[list] = None) -> None:
     ro.add_argument("-c", "--config", default="config/config.yaml")
     mr = sub.add_parser("match-report")
     mr.add_argument("-c", "--config", default="config/config.yaml")
-    mr.add_argument("-o", "--output", default=None, help="CSV 输出路径(默认 logs/line_match_report.csv)")
+    mr.add_argument("-o", "--output", default=None,
+                    help="文件输出路径(默认 logs/line_match_report.xlsx;.csv 结尾则输出 CSV)")
+    mr.add_argument("--db", action="store_true",
+                    help="写入 transit_match_report 表(整体替换),便于 SQL 查询;只给 --db 则不写文件")
 
     args = parser.parse_args(argv)
     if args.cmd == "initdb":
@@ -155,7 +170,7 @@ def main(argv: Optional[list] = None) -> None:
     elif args.cmd == "serve":
         cmd_serve(args.config)
     elif args.cmd == "match-report":
-        cmd_match_report(args.config, args.output)
+        cmd_match_report(args.config, args.output, to_db=args.db)
 
 
 if __name__ == "__main__":  # pragma: no cover
