@@ -116,6 +116,25 @@ def test_entity_failure_isolation_skips_and_continues(tmp_path):
     assert stats["line_count"] == 2 and stats["entities_archived"] == 1   # BAD skipped, OK archived
 
 
+def test_entity_archived_with_bare_line_name_in_db(tmp_path):
+    """transit_line_raw.line_name 存裸线路号（"47"），磁盘文件名仍带 line_entity_ 前缀。"""
+    def handler(request):
+        p = request.url.path
+        if p == "/token":
+            return httpx.Response(200, json={"data": {"token": "TOK"}})
+        if p == "/list":
+            return httpx.Response(200, json={"data": [{"lineName": "47"}]})
+        return httpx.Response(200, text=json.dumps({"Data": {"LineName": "47"}}))
+    e = _engine(tmp_path)
+    out = tmp_path / "raw"
+    run_transit_stage1(e, _client(handler), _config(), out_dir=str(out), now_ms=lambda: 1)
+    with e.connect() as c:
+        names = [r[0] for r in c.execute(select(transit_line_raw.c.line_name)).all()]
+    assert "47" in names                    # DB 存裸线路号
+    assert "line_entity_47" not in names    # 不再把文件前缀塞进 DB
+    assert (out / "line_entity_47_1.json").exists()   # 磁盘文件仍带前缀
+
+
 def test_long_line_name_does_not_crash(tmp_path):
     longname = "路" * 300
     def handler(request):

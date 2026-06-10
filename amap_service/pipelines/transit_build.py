@@ -13,7 +13,9 @@ import logging
 from sqlalchemy import Engine
 
 from amap_service.clients.transit import TransitClient
-from amap_service.db.repositories import replace_transit_segments, replace_transit_stations
+from amap_service.db.repositories import (
+    insert_transit_line_raw, replace_transit_segments, replace_transit_stations,
+)
 from amap_service.parsing.transit import extract_line_records, parse_line_stations, parse_line_tracks, select_line_names
 from amap_service.pipelines.section_build import run_section_build
 from amap_service.sdk import TrackConverter
@@ -62,6 +64,7 @@ def run_transit_build(engine: Engine, transit_client: TransitClient, config) -> 
     for name in to_process:
         try:
             raw_entity = transit_client.get_line_entity(token, name)
+            insert_transit_line_raw(engine, name, raw_entity)  # 归档原始线路对象(供 match-report 取原始轨迹)
             parsed = json.loads(raw_entity)
             tracks = parse_line_tracks(parsed)
             if not tracks:

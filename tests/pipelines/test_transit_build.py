@@ -77,6 +77,18 @@ def test_build_converts_both_directions_to_segments(tmp_path):
     assert down == [(1, "120.002,31.0;120.001,31.0;120.0,31.0")]
 
 
+def test_build_archives_raw_entity_to_transit_line_raw(tmp_path):
+    """transit-build 也归档原始线路对象到 transit_line_raw（裸线路号），供 match-report 取原始轨迹。"""
+    from amap_service.db.schema import transit_line_raw
+    e = _engine(tmp_path)
+    run_transit_build(e, _client(), _config())
+    with e.connect() as c:
+        rows = c.execute(select(transit_line_raw.c.line_name, transit_line_raw.c.raw_response)).all()
+    assert any(r.line_name == "47" for r in rows)   # 裸线路号，非 line_entity_47
+    raw = next(r.raw_response for r in rows if r.line_name == "47")
+    assert json.loads(raw)["Data"]["LineName"] == "47"
+
+
 def test_build_company_filter_skips_other_companies(tmp_path):
     fetched = []
     def handler(request):

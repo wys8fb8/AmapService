@@ -18,13 +18,18 @@ from amap_service.parsing.transit import extract_line_records, select_line_names
 logger = logging.getLogger(__name__)
 
 
-def _archive(engine: Engine, out_dir: str, name: str, raw_text, ts: int) -> None:
+def _archive(engine: Engine, out_dir: str, file_label: str, raw_text, ts: int,
+             line_name: str = None) -> None:
+    """归档原始响应：磁盘文件名用 file_label（如 line_entity_47），DB line_name 用裸线路号。
+
+    line_name 缺省时回退用 file_label（token / line_list 这类非线路响应即用其标签）。
+    """
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    safe = name.replace("/", "_").replace("\\", "_")
+    safe = file_label.replace("/", "_").replace("\\", "_")
     safe = safe.encode("utf-8")[:150].decode("utf-8", "ignore")  # keep filename within FS limits
     (directory / f"{safe}_{ts}.json").write_text(raw_text or "", encoding="utf-8")
-    insert_transit_line_raw(engine, name, raw_text)
+    insert_transit_line_raw(engine, file_label if line_name is None else line_name, raw_text)
 
 
 def run_transit_stage1(engine: Engine, transit_client: TransitClient, config,
@@ -66,7 +71,7 @@ def run_transit_stage1(engine: Engine, transit_client: TransitClient, config,
     for name in to_fetch:
         try:
             raw_entity = transit_client.get_line_entity(token, name)
-            _archive(engine, out_dir, f"line_entity_{name}", raw_entity, ts)
+            _archive(engine, out_dir, f"line_entity_{name}", raw_entity, ts, line_name=name)
             stats["entities_archived"] += 1
         except Exception:  # noqa: BLE001 - one bad line must not abort the capture run
             logger.exception("transit stage1: line entity '%s' failed; skipping", name)
