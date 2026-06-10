@@ -85,6 +85,15 @@ def build_match_report(engine: Engine) -> list[dict]:
     return report
 
 
+def _row_cells(r: dict) -> list:
+    return [
+        r["line_name"], r["direction_label"],
+        "" if r["original_len_m"] is None else r["original_len_m"],
+        r["matched_len_m"],
+        "" if r["diff_pct"] is None else r["diff_pct"],
+    ]
+
+
 def write_match_report_csv(rows: list[dict], path: str) -> None:
     """写 CSV(utf-8-sig,Excel 直接识别中文)。原始/差异缺失留空。"""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -92,9 +101,42 @@ def write_match_report_csv(rows: list[dict], path: str) -> None:
         w = csv.writer(f)
         w.writerow(CSV_HEADERS)
         for r in rows:
-            w.writerow([
-                r["line_name"], r["direction_label"],
-                "" if r["original_len_m"] is None else r["original_len_m"],
-                r["matched_len_m"],
-                "" if r["diff_pct"] is None else r["diff_pct"],
-            ])
+            w.writerow(_row_cells(r))
+
+
+def _diff_fill(diff_pct):
+    """按差异绝对值给整行底色：>10% 红，5%~10%(含10) 黄，其余/缺失 无。"""
+    from openpyxl.styles import PatternFill
+    if diff_pct is None:
+        return None
+    a = abs(diff_pct)
+    if a > 10:
+        return PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
+    if a >= 5:
+        return PatternFill(start_color="FFFFFF00", end_color="FFFFFF00", fill_type="solid")
+    return None
+
+
+def write_match_report_xlsx(rows: list[dict], path: str) -> None:
+    """写 XLSX：差异绝对值 >10% 整行标红、5%~10% 标黄；原始/差异缺失留空、不标色。"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "匹配长度对比"
+    ws.append(CSV_HEADERS)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for r in rows:
+        ws.append(_row_cells(r))
+        fill = _diff_fill(r["diff_pct"])
+        if fill is not None:
+            for cell in ws[ws.max_row]:
+                cell.fill = fill
+    for i, width in enumerate((12, 8, 14, 14, 12), start=1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+    ws.freeze_panes = "A2"  # 冻结表头
+    wb.save(path)

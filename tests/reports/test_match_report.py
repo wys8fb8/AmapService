@@ -7,7 +7,9 @@ from amap_service.db.engine import make_engine
 from amap_service.db.migrate import init_db
 from amap_service.db.schema import transit_segment, transit_line_raw
 from amap_service.sdk import geometry
-from amap_service.reports.match_report import build_match_report, write_match_report_csv
+from amap_service.reports.match_report import (
+    build_match_report, write_match_report_csv, write_match_report_xlsx,
+)
 
 
 def _eng(tmp_path):
@@ -86,3 +88,35 @@ def test_write_csv_headers_and_values(tmp_path):
     assert lines[0] == "线路名称,上下行,原始轨迹长度,匹配后长度,差异百分比"
     assert lines[1] == "47,上行,100.0,110.0,10.0"
     assert lines[2] == "99,下行,,50.0,"   # 原始/差异缺失留空
+
+
+def test_write_xlsx_conditional_fills(tmp_path):
+    from openpyxl import load_workbook
+    rows = [
+        {"line_name": "A", "direction": 0, "direction_label": "上行",
+         "original_len_m": 100.0, "matched_len_m": 112.0, "diff_pct": 12.0},   # >10 红
+        {"line_name": "B", "direction": 0, "direction_label": "上行",
+         "original_len_m": 100.0, "matched_len_m": 93.0, "diff_pct": -7.0},     # |7| 黄
+        {"line_name": "C", "direction": 0, "direction_label": "上行",
+         "original_len_m": 100.0, "matched_len_m": 102.0, "diff_pct": 2.0},     # <5 无色
+        {"line_name": "D", "direction": 1, "direction_label": "下行",
+         "original_len_m": None, "matched_len_m": 50.0, "diff_pct": None},      # 缺失 无色
+        {"line_name": "E", "direction": 0, "direction_label": "上行",
+         "original_len_m": 100.0, "matched_len_m": 90.0, "diff_pct": -10.0},    # 边界10 黄
+    ]
+    out = tmp_path / "r.xlsx"
+    write_match_report_xlsx(rows, str(out))
+    ws = load_workbook(str(out)).active
+    assert [c.value for c in ws[1]] == ["线路名称", "上下行", "原始轨迹长度", "匹配后长度", "差异百分比"]
+
+    def fill_rgb(row):
+        return ws.cell(row=row, column=5).fill.start_color.rgb
+
+    assert fill_rgb(2) == "FFFF0000"   # A 红(>10)
+    assert fill_rgb(3) == "FFFFFF00"   # B 黄(|7|)
+    assert ws.cell(row=4, column=5).fill.fill_type in (None, "none")  # C 无色
+    assert ws.cell(row=5, column=5).fill.fill_type in (None, "none")  # D 缺失无色
+    assert fill_rgb(6) == "FFFFFF00"   # E 边界10 → 黄
+    # 值与留空
+    assert ws.cell(row=2, column=1).value == "A"
+    assert ws.cell(row=5, column=3).value in ("", None)  # D 原始留空

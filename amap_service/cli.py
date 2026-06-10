@@ -100,14 +100,22 @@ def cmd_run(config_path: str) -> None:
 
 
 def cmd_match_report(config_path: str, output: Optional[str] = None) -> str:
-    """统计每条已匹配线路各方向的原始轨迹长度 vs 匹配后路段长度,输出 CSV 到 logs/。"""
-    from amap_service.reports.match_report import build_match_report, write_match_report_csv
+    """统计每条已匹配线路各方向的原始轨迹长度 vs 匹配后路段长度,输出到 logs/。
+
+    默认 .xlsx(差异 >10% 标红、5%~10% 标黄);-o 以 .csv 结尾则输出 CSV(无标色)。
+    """
+    from amap_service.reports.match_report import (
+        build_match_report, write_match_report_csv, write_match_report_xlsx,
+    )
     config = load_config(config_path)
     _configure_logging(config)
     engine = make_engine(config.database)
     rows = build_match_report(engine)
-    out = output or "logs/line_match_report.csv"
-    write_match_report_csv(rows, out)
+    out = output or "logs/line_match_report.xlsx"
+    if out.lower().endswith(".csv"):
+        write_match_report_csv(rows, out)
+    else:
+        write_match_report_xlsx(rows, out)
     logger.info("match-report: %d rows -> %s", len(rows), out)
     print(f"match-report: wrote {len(rows)} rows to {out}")
     return out
