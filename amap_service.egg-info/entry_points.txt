@@ -1,2 +1,0 @@
-[console_scripts]
-amap-service = amap_service.cli:main

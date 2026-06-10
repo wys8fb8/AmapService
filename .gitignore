@@ -3,6 +3,9 @@ __pycache__/
 .venv/
 venv/
 *.db
+*.db-shm
+*.db-wal
+*.egg-info/
 logs/
 .env
 config/config.yaml
