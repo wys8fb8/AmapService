@@ -132,4 +132,6 @@ mqtt:
   include_geometry: false     # 默认瘦 payload；true 则主题里带 line_track 坐标
   publish_map: true           # 需求4 线路地图主题开关
   publish_section: true       # 需求5 线路模拟图主题开关
+  payload_format: "json"      # json | protobuf | both ;默认 json(行为同现状)
+  pb_topic_suffix: ".pb"      # protobuf 主题在原主题名后追加的后缀(如 amap/line/47/traffic.pb)
   connect_timeout_seconds: 5
