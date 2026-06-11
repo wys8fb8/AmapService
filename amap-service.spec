@@ -1,12 +1,13 @@
 # amap-service.spec
 # PyInstaller onedir 打包脚本。构建: pyinstaller amap-service.spec --noconfirm
 # 产物: dist/amap-service/ (amap-service.exe + _internal/)
+# 需要 PyInstaller >= 6 (onedir COLLECT 不含 a.zipfiles)
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas, binaries, hiddenimports = [], [], []
 
 # 含二进制扩展 / 运行期动态导入，必须整包收集
-for pkg in ("pydantic", "pydantic_core", "google.protobuf", "ijson"):
+for pkg in ("pydantic", "pydantic_core", "google.protobuf", "ijson", "websockets"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
@@ -16,7 +17,8 @@ for pkg in ("pydantic", "pydantic_core", "google.protobuf", "ijson"):
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("openpyxl")
 hiddenimports += [
-    "websockets",
+    "anyio._backends._asyncio",  # anyio 运行期按字符串动态 import 后端
+    "sniffio",                   # anyio 后端检测器
     "httptools",
     "uvicorn.protocols.http.httptools_impl",
     "uvicorn.protocols.websockets.websockets_impl",
@@ -25,6 +27,7 @@ hiddenimports += [
     "apscheduler.executors.pool",
     "apscheduler.jobstores.memory",
     "sqlalchemy.dialects.sqlite",
+    "sqlalchemy.dialects.mysql",  # repositories.py 静态导入;方言动态加载
     "pymysql",  # 用 MySQL 时需要;未装也不致命(运行期才 import)
     "paho.mqtt.client",
     "redis",

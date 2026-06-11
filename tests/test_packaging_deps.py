@@ -17,6 +17,8 @@ REQUIRED = [
     "apscheduler.executors.pool",
     "apscheduler.jobstores.memory",
     "sqlalchemy.dialects.sqlite",
+    "sqlalchemy.dialects.mysql",
+    "anyio._backends._asyncio",
     "paho.mqtt.client",
     "redis",
     "openpyxl",
