@@ -57,3 +57,37 @@ def test_traffic_job_gets_on_complete_when_provided(monkeypatch):
     job = next(j for j in sched.get_jobs() if j.id == "traffic_status")
     job.func()
     assert captured["on_complete"] is sentinel
+
+
+def test_traffic_run_on_start_adds_immediate_job():
+    from apscheduler.triggers.date import DateTrigger
+    cfg = _config()
+    cfg.amap.jobs.traffic_status.run_on_start = True
+    sched = build_scheduler(cfg, engine=object(), http_client=object(), cache=NoOpCache())
+    ids = {j.id for j in sched.get_jobs()}
+    assert "traffic_status_on_start" in ids
+    assert isinstance(sched.get_job("traffic_status_on_start").trigger, DateTrigger)
+
+
+def test_no_immediate_job_without_run_on_start():
+    sched = build_scheduler(_config(), engine=object(), http_client=object(), cache=NoOpCache())
+    assert "traffic_status_on_start" not in {j.id for j in sched.get_jobs()}
+
+
+def test_run_on_start_job_passes_on_complete(monkeypatch):
+    """启动即发布的一次性任务同样透传 on_complete(会触发 MQTT 发布)。"""
+    import amap_service.scheduler.runner as runner
+    captured = {}
+
+    def fake_run_traffic(*args, **kwargs):
+        captured["on_complete"] = kwargs.get("on_complete")
+        return {"written": 0, "failed": 0}
+
+    monkeypatch.setattr(runner, "run_traffic", fake_run_traffic)
+    cfg = _config()
+    cfg.amap.jobs.traffic_status.run_on_start = True
+    sentinel = lambda rows: None
+    sched = runner.build_scheduler(cfg, engine=None, http_client=None, cache=None,
+                                   on_traffic_complete=sentinel)
+    sched.get_job("traffic_status_on_start").func()
+    assert captured["on_complete"] is sentinel

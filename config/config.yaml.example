@@ -28,6 +28,7 @@ amap:
       cron: "*/2 * * * *" # 每 2 分钟
       enabled: true
       parse_mode: memory  # 路况响应小 → 一次性解析，可重试
+      run_on_start: false # true=启动即拉取+发布一次(不等下一个 cron tick);任一 job 均支持
 
 # ── 公交线路上游（需求2，不同主机/端口）────────────────
 transit:

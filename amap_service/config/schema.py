@@ -28,6 +28,7 @@ class JobConfig(BaseModel):
     cron: str
     enabled: bool = True
     parse_mode: Literal["memory", "stream"] = "memory"
+    run_on_start: bool = False  # 启动时除按 cron 外,再立即跑一次(便于重启后马上发布/落地)
 
     @field_validator("cron")
     @classmethod

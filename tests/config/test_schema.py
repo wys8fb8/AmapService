@@ -153,3 +153,13 @@ def test_mqtt_payload_format_invalid_rejected():
     from amap_service.config.schema import MqttConfig
     with pytest.raises(ValidationError):
         MqttConfig(payload_format="msgpack")
+
+
+def test_job_run_on_start_default_and_override():
+    cfg = AppConfig.model_validate(_minimal())
+    assert cfg.amap.jobs.traffic_status.run_on_start is False
+    assert cfg.amap.jobs.road_network.run_on_start is False
+    data = _minimal()
+    data["amap"]["jobs"]["traffic_status"]["run_on_start"] = True
+    cfg2 = AppConfig.model_validate(data)
+    assert cfg2.amap.jobs.traffic_status.run_on_start is True
