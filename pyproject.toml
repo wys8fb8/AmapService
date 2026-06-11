@@ -23,7 +23,7 @@ amap-service = "amap_service.cli:main"
 
 [project.optional-dependencies]
 mysql = ["PyMySQL>=1.1"]
-dev = ["pytest>=8", "fakeredis>=2", "grpcio-tools>=1.60"]
+dev = ["pytest>=8", "fakeredis>=2", "grpcio-tools>=1.66"]  # 1.66 捆绑 protobuf 5.x,生成代码与 protobuf>=5 运行期匹配
 
 [build-system]
 requires = ["setuptools>=68"]

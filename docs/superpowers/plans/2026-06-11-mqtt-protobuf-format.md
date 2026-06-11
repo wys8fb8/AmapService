@@ -159,7 +159,7 @@ message SectionLink {
 把 `dev` extras 改为含生成工具：
 
 ```toml
-dev = ["pytest>=8", "fakeredis>=2", "grpcio-tools>=1.60"]
+dev = ["pytest>=8", "fakeredis>=2", "grpcio-tools>=1.66"]
 ```
 
 - [ ] **Step 3: 创建生成脚本与包标记**
