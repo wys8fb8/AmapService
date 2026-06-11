@@ -1,11 +1,12 @@
 from sqlalchemy import Engine, create_engine, event
 
 from amap_service.config.schema import DatabaseConfig
+from amap_service.paths import resolve_data_path
 
 
 def build_url(db: DatabaseConfig) -> str:
     if db.type == "sqlite":
-        return f"sqlite:///{db.sqlite.path}"
+        return f"sqlite:///{resolve_data_path(db.sqlite.path)}"
     if db.type == "mysql":
         m = db.mysql
         return (
