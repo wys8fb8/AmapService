@@ -150,10 +150,10 @@ message SectionLink {
 
 - [ ] **Step 2: 加依赖到 `pyproject.toml`**
 
-在 `dependencies` 列表里（`"paho-mqtt>=1.6,<2",` 之后）加一行：
+在 `dependencies` 列表里（`"paho-mqtt>=1.6,<2",` 之后）加一行（注：用 `>=5`，因 grpcio-tools 5.x 生成的 `*_pb2` 内嵌 protobuf 5.x runtime 版本校验，4.x 无 `runtime_version` 模块会 ImportError）：
 
 ```toml
-  "protobuf>=4,<6",
+  "protobuf>=5,<6",
 ```
 
 把 `dev` extras 改为含生成工具：
