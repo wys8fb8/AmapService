@@ -83,5 +83,6 @@ class LineSummary(BaseModel):
     station_count: int
 
 
+# 健康检查响应
 class HealthStatus(BaseModel):
     status: str
