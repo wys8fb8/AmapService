@@ -59,46 +59,46 @@ def _client(tmp_path, auth_enabled=False):
 
 def test_health(tmp_path):
     r = _client(tmp_path).get("/api/v1/health")
-    assert r.status_code == 200 and r.json()["status"] == "ok"
+    assert r.status_code == 200 and r.json()["data"]["status"] == "ok"
 
 
 def test_lines(tmp_path):
     r = _client(tmp_path).get("/api/v1/lines")
     assert r.status_code == 200
-    assert r.json()[0]["line_name"] == "47"
+    assert r.json()["data"][0]["line_name"] == "47"
 
 
 def test_segments_req3(tmp_path):
     r = _client(tmp_path).get("/api/v1/lines/47/segments")
-    seg = r.json()["directions"][0]["segments"][0]
+    seg = r.json()["data"]["directions"][0]["segments"][0]
     assert seg["link_id"] == "5130091959790075998"
     assert seg["line_track"] == "121.1,31.1;121.2,31.2"
 
 
 def test_traffic_req4_lean_default(tmp_path):
     r = _client(tmp_path).get("/api/v1/lines/47/traffic")
-    seg = r.json()["directions"][0]["segments"][0]
+    seg = r.json()["data"]["directions"][0]["segments"][0]
     assert seg["state"] == 2 and seg["speed"] == 18
     assert seg.get("line_track") is None
 
 
 def test_traffic_req4_geometry_true(tmp_path):
     r = _client(tmp_path).get("/api/v1/lines/47/traffic?geometry=true")
-    seg = r.json()["directions"][0]["segments"][0]
+    seg = r.json()["data"]["directions"][0]["segments"][0]
     assert seg["line_track"] == "121.1,31.1;121.2,31.2"
 
 
 def test_sections_req5(tmp_path):
     r = _client(tmp_path).get("/api/v1/lines/47/sections")
-    sec = r.json()["directions"][0]["sections"][0]
+    sec = r.json()["data"]["directions"][0]["sections"][0]
     assert sec["from_level_id"] == 1 and sec["to_level_id"] == 2
     assert sec["links"][0]["pct"] == 100 and sec["links"][0]["state"] == 2
 
 
 def test_single_section_req5(tmp_path):
     r = _client(tmp_path).get("/api/v1/lines/47/sections/2?direction=0")
-    assert r.json()["to_level_id"] == 2
-    assert r.json()["links"][0]["state"] == 2
+    assert r.json()["data"]["to_level_id"] == 2
+    assert r.json()["data"]["links"][0]["state"] == 2
 
 
 def test_unknown_line_404(tmp_path):

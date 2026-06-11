@@ -95,3 +95,24 @@ def test_error_500_enveloped(tmp_path):
     assert body["success"] is False and body["data"] is None
     assert body["message"] == "Internal Server Error"
     assert body["requestid"].startswith("req_")
+
+
+def test_success_lines_enveloped(tmp_path):
+    r = _client(tmp_path).get("/api/v1/lines")
+    body = r.json()
+    assert r.status_code == 200
+    assert body["success"] is True and body["code"] == 200 and body["message"] == "OK"
+    assert body["data"][0]["line_name"] == "47"
+    assert body["requestid"].startswith("req_")
+    assert TS_RE.match(body["timestamp"])
+
+
+def test_success_segments_preserves_link_id_string(tmp_path):
+    r = _client(tmp_path).get("/api/v1/lines/47/segments")
+    seg = r.json()["data"]["directions"][0]["segments"][0]
+    assert seg["link_id"] == "5130091959790075998"  # 字符串,防 JS 损精度
+
+
+def test_success_health_enveloped(tmp_path):
+    body = _client(tmp_path).get("/api/v1/health").json()
+    assert body["success"] is True and body["data"]["status"] == "ok"

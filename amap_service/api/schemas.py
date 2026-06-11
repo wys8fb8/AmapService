@@ -81,3 +81,7 @@ class LineSummary(BaseModel):
     has_segments: bool
     has_sections: bool
     station_count: int
+
+
+class HealthStatus(BaseModel):
+    status: str
