@@ -1,8 +1,9 @@
 """FastAPI 应用工厂。单例(engine/cache/static_cache/traffic_reader/config)挂 app.state。"""
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from amap_service.api.envelope import error_response
@@ -37,7 +38,7 @@ def create_app(config, engine=None) -> FastAPI:
     app.include_router(router)
     app.add_middleware(RequestIdMiddleware)
 
-    @app.exception_handler(HTTPException)
+    @app.exception_handler(StarletteHTTPException)
     async def _http_exc(request, exc):
         return error_response(exc.status_code, str(exc.detail), request.state.request_id)
 

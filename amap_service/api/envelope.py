@@ -32,11 +32,14 @@ def success(data, request, message: str = "OK", code: int = 200) -> Envelope:
 
 
 def error_response(code: int, message: str, request_id: str) -> JSONResponse:
-    """构造失败信封 JSONResponse(HTTP 状态码与信封 code 一致,data=null)。"""
-    return JSONResponse(
+    """构造失败信封 JSONResponse(HTTP 状态码与信封 code 一致,data=null)。
+    同时回写 X-Request-ID 响应头(兜底:500 走 ServerErrorMiddleware 时中间件不再覆盖头)。"""
+    resp = JSONResponse(
         status_code=code,
         content={
             "success": False, "code": code, "message": message, "data": None,
             "timestamp": now_iso_millis(), "requestid": request_id,
         },
     )
+    resp.headers["X-Request-ID"] = request_id
+    return resp
