@@ -11,7 +11,7 @@ class NoOpMqttClient:
     def connect(self) -> None:
         pass
 
-    def publish(self, topic: str, payload: str, qos: int = 0, retain: bool = False) -> None:
+    def publish(self, topic: str, payload: "str | bytes", qos: int = 0, retain: bool = False) -> None:
         pass
 
     def disconnect(self) -> None:
@@ -33,7 +33,7 @@ class PahoMqttClient:
         self._client.loop_start()
         self._connected = True
 
-    def publish(self, topic: str, payload: str, qos: int = 0, retain: bool = False) -> None:
+    def publish(self, topic: str, payload: "str | bytes", qos: int = 0, retain: bool = False) -> None:
         if not self._connected:
             self.connect()
         self._client.publish(topic, payload, qos=qos, retain=retain)
