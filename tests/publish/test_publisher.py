@@ -1,6 +1,7 @@
 import json
 
 from amap_service.config.schema import MqttConfig
+from amap_service.publish.proto import line_traffic_pb2 as pb
 from amap_service.publish.publisher import MqttPublisher
 
 LID = 5130091959790075998
@@ -106,9 +107,6 @@ def test_one_line_failure_does_not_abort_others():
     assert stats["skipped"] >= 1
 
 
-from amap_service.publish.proto import line_traffic_pb2 as pb
-
-
 def test_protobuf_mode_publishes_pb_topics_only():
     client = FakeMqttClient()
     pub = MqttPublisher(client, FakeStaticCache(),
@@ -150,4 +148,6 @@ def test_one_encoder_failure_isolated_in_both_mode():
     topics = {t for t, _, _, _ in client.published}
     assert "amap/line/47/traffic.pb" in topics   # protobuf 未受 JSON 失败牵连
     assert "amap/line/47/traffic" not in topics
+    # traffic 编码器失败不应连累 section 两种格式
+    assert "amap/line/47/section" in topics and "amap/line/47/section.pb" in topics
     assert stats["skipped"] >= 1
