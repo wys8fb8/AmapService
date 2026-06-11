@@ -3,6 +3,7 @@ import argparse
 import logging
 from typing import Optional
 
+from amap_service import paths
 from amap_service.cache.client import make_cache
 from amap_service.clients.base import HttpClient
 from amap_service.config.loader import load_config
@@ -151,14 +152,15 @@ def cmd_serve(config_path: str) -> None:
 def main(argv: Optional[list] = None) -> None:
     parser = argparse.ArgumentParser(prog="amap-service")
     sub = parser.add_subparsers(dest="cmd", required=True)
+    default_config = str(paths.default_config_path())
     for name in ("initdb", "run", "serve"):
         sp = sub.add_parser(name)
-        sp.add_argument("-c", "--config", default="config/config.yaml")
+        sp.add_argument("-c", "--config", default=default_config)
     ro = sub.add_parser("run-once")
     ro.add_argument("job", choices=["road-network", "traffic", "transit", "transit-build", "section-build"])
-    ro.add_argument("-c", "--config", default="config/config.yaml")
+    ro.add_argument("-c", "--config", default=default_config)
     mr = sub.add_parser("match-report")
-    mr.add_argument("-c", "--config", default="config/config.yaml")
+    mr.add_argument("-c", "--config", default=default_config)
     mr.add_argument("-o", "--output", default=None,
                     help="文件输出路径(默认 logs/line_match_report.xlsx;.csv 结尾则输出 CSV)")
     mr.add_argument("--db", action="store_true",
