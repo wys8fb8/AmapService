@@ -18,7 +18,6 @@ hiddenimports += collect_submodules("uvicorn")
 hiddenimports += collect_submodules("openpyxl")
 hiddenimports += [
     "anyio._backends._asyncio",  # anyio 运行期按字符串动态 import 后端
-    "sniffio",                   # anyio 后端检测器
     "httptools",
     "uvicorn.protocols.http.httptools_impl",
     "uvicorn.protocols.websockets.websockets_impl",
