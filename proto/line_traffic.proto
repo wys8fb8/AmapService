@@ -1,0 +1,42 @@
+syntax = "proto3";
+package amap.line.v1;
+
+message TrafficView {                 // 需求4 地图主题
+  string line_name = 1;
+  string traffic_time = 2;            // 与 JSON 1:1,东八区字符串
+  repeated TrafficDirection directions = 3;
+}
+message TrafficDirection {
+  int32 direction = 1;
+  repeated TrafficSegment segments = 2;
+}
+message TrafficSegment {
+  int32  seq = 1;
+  int64  link_id = 2;                 // 64 位原生,不再用字符串
+  optional int32 state = 3;           // optional 保留"路况缺失"语义(区别于 0)
+  optional int32 speed = 4;
+  optional int32 travel_time = 5;
+  int32  reverse = 6;
+  optional string line_track = 7;     // include_geometry=true 才填
+}
+
+message SectionView {                 // 需求5 模拟图主题
+  string line_name = 1;
+  string traffic_time = 2;
+  repeated SectionDirection directions = 3;
+}
+message SectionDirection {
+  int32 direction = 1;
+  repeated Section sections = 2;
+}
+message Section {
+  int32 from_level_id = 1;
+  int32 to_level_id = 2;
+  repeated SectionLink links = 3;
+}
+message SectionLink {
+  int64  link_id = 1;
+  int32  state = 2;                   // 需求5 缺失默认 1,故非 optional
+  int32  pct = 3;
+  optional string line_track = 4;
+}
