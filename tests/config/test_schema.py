@@ -132,3 +132,24 @@ def test_mqtt_qos_range_validated():
     from amap_service.config.schema import MqttConfig
     with pytest.raises(ValidationError):
         MqttConfig(qos=3)
+
+
+def test_mqtt_payload_format_defaults():
+    from amap_service.config.schema import MqttConfig
+    cfg = MqttConfig()
+    assert cfg.payload_format == "json"
+    assert cfg.pb_topic_suffix == ".pb"
+
+
+def test_mqtt_payload_format_accepts_protobuf_and_both():
+    from amap_service.config.schema import MqttConfig
+    assert MqttConfig(payload_format="protobuf").payload_format == "protobuf"
+    assert MqttConfig(payload_format="both").payload_format == "both"
+
+
+def test_mqtt_payload_format_invalid_rejected():
+    import pytest
+    from pydantic import ValidationError
+    from amap_service.config.schema import MqttConfig
+    with pytest.raises(ValidationError):
+        MqttConfig(payload_format="msgpack")

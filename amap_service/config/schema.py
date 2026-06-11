@@ -176,6 +176,9 @@ class MqttConfig(BaseModel):
     publish_map: bool = True       # 需求4 线路地图主题
     publish_section: bool = True   # 需求5 线路模拟图主题
     connect_timeout_seconds: int = 5
+    # 线上编码格式:json=仅原主题; protobuf=仅 .pb 主题; both=两者各发一份(平滑过渡)
+    payload_format: Literal["json", "protobuf", "both"] = "json"
+    pb_topic_suffix: str = ".pb"   # protobuf 主题在原主题名后追加的后缀
     # 静态结构进程内缓存校验间隔(秒)。结构仅 transit-build/section-build 后变(天级),
     # 故默认 600,避免每轮发布都重跑昂贵的版本探针;0=每轮都校验。
     static_cache_ttl_seconds: int = 600
