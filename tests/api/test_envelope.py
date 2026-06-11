@@ -94,3 +94,4 @@ def test_error_500_enveloped(tmp_path):
     assert r.status_code == 500 and body["code"] == 500
     assert body["success"] is False and body["data"] is None
     assert body["message"] == "Internal Server Error"
+    assert body["requestid"].startswith("req_")
