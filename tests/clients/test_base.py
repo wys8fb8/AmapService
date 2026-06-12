@@ -1,3 +1,6 @@
+import gzip
+import json
+
 import httpx
 import pytest
 from amap_service.clients.base import HttpClient
@@ -70,3 +73,34 @@ def test_stream_items_raises_on_http_error():
     with _client_with(handler) as c:
         with pytest.raises(httpx.HTTPError):
             list(c.stream_items("http://h/x", "linkCoordList.item"))
+
+
+# 上游服务器返回 gzip body 但不带 Content-Encoding 头(httpx 因此不会自动解压)。
+def test_get_json_decompresses_gzip_without_content_encoding():
+    gz = gzip.compress(b'{"linkStates":[{"linkId":5130091959790075998,"state":2}]}')
+    def handler(request):
+        return httpx.Response(200, content=gz, headers={"content-type": "application/json"})
+    with _client_with(handler) as c:
+        body = c.get_json("http://h/traffic")
+    assert body["linkStates"][0]["state"] == 2
+    assert body["linkStates"][0]["linkId"] == 5130091959790075998  # 64 位精度不丢
+
+
+def test_get_json_labeled_gzip_not_double_decompressed():
+    # 规范情形:带 Content-Encoding: gzip,httpx 已解压;不应再被二次解压。
+    gz = gzip.compress(b'{"ok": true}')
+    def handler(request):
+        return httpx.Response(200, content=gz,
+                              headers={"content-encoding": "gzip", "content-type": "application/json"})
+    with _client_with(handler) as c:
+        assert c.get_json("http://h/x") == {"ok": True}
+
+
+def test_stream_items_decompresses_gzip_without_content_encoding():
+    gz = gzip.compress(b'{"linkCoordList":[{"linkId":5130091959790075998},{"linkId":7}]}')
+    def handler(request):
+        return httpx.Response(200, content=gz, headers={"content-type": "application/json"})
+    with _client_with(handler) as c:
+        items = list(c.stream_items("http://h/areaLinkPub", "linkCoordList.item"))
+    assert len(items) == 2
+    assert items[0]["linkId"] == 5130091959790075998
